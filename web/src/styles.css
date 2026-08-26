@@ -211,6 +211,10 @@ body {
   padding: 3px 12px; border-radius: 8px;
   background: rgba(143, 206, 136, 0.08); border: 1px solid rgba(143, 206, 136, 0.18);
 }
+.broadcast-field-click { cursor: pointer; transition: all 0.12s; }
+.broadcast-field-click:hover {
+  border-color: var(--jade); background: rgba(143, 206, 136, 0.16);
+}
 .broadcast-label { color: var(--text-dim); font-size: 12.5px; letter-spacing: 1px; }
 .broadcast-value { color: var(--gold); font-weight: 600; font-size: 13.5px; font-family: var(--serif); }
 

@@ -66,5 +66,53 @@ class TestParseNarrative(unittest.TestCase):
         self.assertEqual(parse_narrative(""), [])
 
 
+class TestSmallModelDrift(unittest.TestCase):
+    """本地 1.7B 实测漂移形态的回归用例（来自真机截图）。"""
+
+    def test_latex_lines_dropped(self):
+        text = "> $$\n> \\fcolorbox{gray}{10}{\\textcolor{white}{灵石}}\n正常旁白一行。"
+        blocks = parse_narrative(text)
+        types = [b["type"] for b in blocks]
+        self.assertEqual(types, ["narration"])
+        self.assertIn("正常旁白", blocks[0]["text"])
+
+    def test_quoted_prefix_stripped(self):
+        blocks = parse_narrative("> 是的。\n> 你听得清，是墨大夫。")
+        self.assertEqual(blocks[0]["type"], "narration")
+        self.assertNotIn(">", blocks[0]["text"])
+        self.assertIn("墨大夫", blocks[0]["text"])
+
+    def test_bold_quoted_dialogue(self):
+        blocks = parse_narrative('> ** "韩立！" **')
+        # 非对话格式的引用行 → 剥净后归旁白
+        self.assertEqual(blocks[0]["type"], "narration")
+        self.assertIn("韩立", blocks[0]["text"])
+
+    def test_broadcast_variant_fields(self):
+        text = "> **【境界】练气3层 | 【寿元】31岁 | 【灵石】8块 | 【地点】七玄门**"
+        blocks = parse_narrative(text)
+        self.assertEqual(blocks[0]["type"], "broadcast")
+        fields = {f["label"]: f["value"] for f in blocks[0]["fields"]}
+        self.assertEqual(fields.get("境界"), "练气3层")
+        self.assertEqual(fields.get("灵石"), "8块")
+
+    def test_panel_label_lines_dropped(self):
+        text = "**【播报条】**\n【境界 练气3层｜灵石 8块】"
+        blocks = parse_narrative(text)
+        types = [b["type"] for b in blocks]
+        self.assertEqual(types, ["broadcast"])
+
+    def test_separator_dropped(self):
+        blocks = parse_narrative("上一段。\n---\n下一段。")
+        self.assertEqual(len(blocks), 1)
+        self.assertIn("上一段", blocks[0]["text"])
+        self.assertIn("下一段", blocks[0]["text"])
+
+    def test_quoted_choices(self):
+        blocks = parse_narrative("> 【A】继续赶路\n> 【B】原地休息")
+        self.assertEqual(blocks[-1]["type"], "choices")
+        self.assertEqual(len(blocks[-1]["options"]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

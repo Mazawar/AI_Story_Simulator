@@ -61,12 +61,31 @@ export function BlockView({ block, onChoice, entities }) {
     case 'broadcast':
       return (
         <div className="broadcast-bar">
-          {block.fields.map((f, i) => (
-            <span className="broadcast-field" key={i}>
-              <span className="broadcast-label">{f.label}</span>
-              <span className="broadcast-value">{f.value}</span>
-            </span>
-          ))}
+          {block.fields.map((f, i) =>
+            f.value ? (
+              <Popover
+                key={i}
+                trigger="click"
+                placement="top"
+                overlayClassName="entity-pop"
+                content={
+                  <div className="entity-card">
+                    <div className="entity-card-name">{f.label}</div>
+                    <div className="entity-card-desc">{f.value}</div>
+                  </div>
+                }
+              >
+                <span className="broadcast-field broadcast-field-click">
+                  <span className="broadcast-label">{f.label}</span>
+                  <span className="broadcast-value">{f.value}</span>
+                </span>
+              </Popover>
+            ) : (
+              <span className="broadcast-field" key={i}>
+                <span className="broadcast-label">{f.label}</span>
+              </span>
+            )
+          )}
         </div>
       )
 

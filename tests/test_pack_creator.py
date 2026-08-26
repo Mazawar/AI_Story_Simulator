@@ -43,6 +43,14 @@ class TestRealPacks(unittest.TestCase):
         texts = " ".join(o["text"] for o in fanren[0]["options"])
         self.assertIn("七玄门", texts)
 
+    def test_direct_wrapper_applied(self):
+        from app.core.engine import _wrapped_system_prompt
+
+        prompt = _wrapped_system_prompt(self.by_title["凡人修仙传：人界篇"])
+        self.assertIn("输出合同", prompt)
+        self.assertIn("禁止再输出任何开局问卷", prompt)
+        self.assertIn("凡人修仙传", prompt)
+
 
 class TestSynthetic(unittest.TestCase):
     def test_minimal(self):
