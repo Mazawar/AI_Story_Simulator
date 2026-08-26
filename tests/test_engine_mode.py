@@ -115,6 +115,34 @@ class TestEngineSession(unittest.TestCase):
             if a["kind"] == "reveal":
                 self.assertNotIn(a["desc"][:10], ctx)
 
+    def test_tasks_panel_identity_line(self):
+        # 向导文本解析身份 → 「任务」面板渲染节点链；模型 flag 达成后翻转状态
+        p = self._run("【人物已定】1.A（七玄门时期）；2.A（凡人——从最底层爬起）；3.A（四灵根）。以此身入局。")
+        self.assertEqual(self.engine.state.extra.get("identity"), "凡人")
+
+        tasks = None
+        for kind, data in self.engine.stream_handle("任务"):
+            if kind == "note":
+                tasks = data
+        panel = next(b for b in tasks.narrative if b["type"] == "panel")
+        labels = [f["label"] for f in panel["fields"]]
+        self.assertIn("灵根觉醒", labels)               # 凡人线首节点
+        values = {f["label"]: f["value"] for f in panel["fields"]}
+        self.assertEqual(values["灵根觉醒"], "· 未竟")
+
+        # 模型以自然名标记达成 → 自动登记为 线:<节点>
+        self.engine.state.flags["线·灵根觉醒"] = True
+        for kind, data in self.engine.stream_handle("任务"):
+            if kind == "note":
+                tasks = data
+        panel = next(b for b in tasks.narrative if b["type"] == "panel")
+        fields = panel["fields"]
+        values = {f["label"]: f["value"] for f in fields}
+        self.assertEqual(values["灵根觉醒"], "✓ 已成")
+        # 当前所指 = 首个未竟节点
+        self.assertEqual(fields[-1]["label"], "当前所指")
+        self.assertEqual(fields[-1]["value"], "求师")
+
     def test_context_budget(self):
         from app.ai.context_assembler import estimate_tokens
 

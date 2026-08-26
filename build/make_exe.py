@@ -37,6 +37,9 @@ def main() -> int:
     r = subprocess.run(
         [sys.executable, "-m", "PyInstaller", "--noconfirm",
          "--distpath", str(REPO.parent / "AIStorySimulator-release"),
+         # workpath（中间产物，含无依赖的裸 exe，双击会报缺 DLL）也放到仓库外，
+         # 防止与 build/ 里的正式脚本混在一起被误双击
+         "--workpath", str(REPO / "build" / "_work"),
          str(REPO / "build" / "AIStorySimulator.spec")],
         cwd=str(REPO),
     )

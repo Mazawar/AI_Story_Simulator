@@ -13,6 +13,9 @@ import re
 # 防刷子：同一 (ref + 理由关键词) 连续命中的衰减
 _DECAY_START = 3          # 第 3 次起开始衰减
 _DECAY_FACTOR = 0.5
+# 单笔钳制：防模型一主观"天赐机缘"发巨款
+_MAX_STONE_GAIN = 30
+_MAX_ITEM_COUNT = 9
 
 _REASON_STRIP_RE = re.compile(r"[\d０-９\s.,，。;；]+")
 
@@ -194,7 +197,9 @@ class NumericState:
             return
 
         if any(c in ref for c in _CURRENCY_REFS):
-            # 防刷子衰减
+            if v > _MAX_STONE_GAIN:
+                reason += f"（机缘过大，被世界规则压缩至{_MAX_STONE_GAIN}）"
+                v = float(_MAX_STONE_GAIN)
             key = _reason_key(reason)
             if key and v > 0 and op == "+":
                 n = self.decay_counter.get(key, 0)
@@ -223,6 +228,8 @@ class NumericState:
         # note 里的数量提示（"数量 +2"）作为数量依据，缺省 ±1
         m = re.search(r"([+-－—]|±)\s*([0-9０-９]+)", note)
         count = abs(int(m.group(2).translate(str.maketrans("０１２３４５６７８９", "0123456789")))) if m else 1
+        if action == "add":
+            count = min(count, _MAX_ITEM_COUNT)
         entry = next((i for i in self.inventory if i["name"] == name), None)
         if action == "add":
             if entry:

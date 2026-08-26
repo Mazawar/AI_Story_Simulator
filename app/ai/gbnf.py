@@ -26,3 +26,39 @@ def grammar_object():
     from llama_cpp import LlamaGrammar
 
     return LlamaGrammar.from_string(ADJUDICATION_GRAMMAR)
+
+
+def salvage_adjudication(text: str) -> dict | None:
+    """从截断的裁决 JSON 中抢救可用字段（生成撞上 max_tokens 时的兜底）。
+
+    narrative 字符串未闭合时补引号闭合；effects 缺失按空处理。
+    """
+    import json as _json
+
+    start = text.find('"narrative"')
+    if start < 0:
+        return None
+    colon = text.find(':', start)
+    if colon < 0:
+        return None
+    rest = text[colon + 1:].lstrip()
+    if not rest.startswith('"'):
+        return None
+    # 找到未被转义终结的字符串结尾；没有则补齐
+    i, closed = 1, False
+    while i < len(rest):
+        ch = rest[i]
+        if ch == '\\':
+            i += 2
+            continue
+        if ch == '"':
+            closed = True
+            break
+        i += 1
+    # 切片必须包含闭引号本身
+    value_text = rest[: i + 1] if closed else rest[:i] + '"'
+    try:
+        narrative = _json.loads(value_text)
+    except _json.JSONDecodeError:
+        return None
+    return {"narrative": narrative.strip() or "（命运的笔锋在此处顿了顿。）", "effects": []}

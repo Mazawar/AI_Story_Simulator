@@ -170,8 +170,12 @@ class LocalBackend(LLMBackend):
 
     def generate_json(self, messages: list[Message], *, max_tokens: int = 1024,
                       temperature: float = 0.3) -> dict:
-        """裁决生成：GBNF 语法强制输出合法裁决 JSON。"""
-        from .gbnf import grammar_object
+        """裁决生成：GBNF 语法强制输出合法裁决 JSON。
+
+        生成可能撞上 token 上限截断（narrative 过长）——先尝试截断抢救，
+        失败则不带语法重生成一次（上限翻倍）。
+        """
+        from .gbnf import salvage_adjudication, grammar_object
 
         out = self.llm.create_chat_completion(
             messages=prepare_messages(messages, no_think=self.no_think),
@@ -179,7 +183,28 @@ class LocalBackend(LLMBackend):
             temperature=temperature,
             grammar=grammar_object(),
         )
-        return json.loads(strip_think(out["choices"][0]["message"]["content"] or "{}"))
+        content = strip_think(out["choices"][0]["message"]["content"] or "{}")
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            salvaged = salvage_adjudication(content)
+            if salvaged is not None:
+                return salvaged
+            out = self.llm.create_chat_completion(
+                messages=prepare_messages(
+                    messages[:-1]
+                    + [{"role": "user",
+                        "content": str(messages[-1]["content"]) +
+                        "\n\n（上一轮你的 JSON 因过长被截断。本轮 narrative 压缩到 40 字以内。）"}],
+                    no_think=self.no_think),
+                max_tokens=max_tokens * 2,
+                temperature=max(0.2, temperature - 0.3),
+            )
+            content = strip_think(out["choices"][0]["message"]["content"] or "{}")
+            salvaged = salvage_adjudication(content)
+            if salvaged is not None:
+                return salvaged
+            return json.loads(content)  # 彻底失败则交给上层优雅降级
 
     def stream(self, messages: list[Message], *, max_tokens: int = 1024,
                temperature: float = 0.8, stop: list[str] | None = None) -> Iterator[str]:

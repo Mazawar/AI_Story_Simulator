@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 
 from ..ai.backend import LLMBackend
@@ -27,6 +28,9 @@ from .rules import NumericState
 
 SUMMARY_EVERY = 10            # 每 N 回合滚动摘要一次
 SETTLEMENT_KEY = "last_settle_turn"
+
+# 身份关键词 → 剧本包身份线名（凡人包四选一）
+_IDENTITY_KEYWORDS = ("凡人", "散修", "宗门弟子", "家族子弟")
 
 
 def _panel_block(title: str, data: dict) -> dict:
@@ -128,10 +132,7 @@ class EngineSession:
             ), player_input=stripped))
             return
         if stripped == "任务":
-            yield ("note", self._emit(note_payload(
-                self.turn_idx + 1,
-                "任务系统随身份线推进（阶段2后续接入；当前可关注世界动态）",
-                panel="tasks"), player_input=stripped))
+            yield ("note", self._emit(self._tasks_panel(), player_input=stripped))
             return
         if stripped == "提示":
             fired = [a["title"] for a in self.anchor_engine.anchors if a.get("is_triggered")]
@@ -154,21 +155,131 @@ class EngineSession:
 
         yield from self._adjudicate(user_input)
 
+    # ---- 身份线与任务面板 ---------------------------------------------------------
+
+    def _resolve_identity(self, wizard_text: str) -> str | None:
+        """从向导组合文本中解析身份（首个命中关键词）。"""
+        for kw in _IDENTITY_KEYWORDS:
+            if kw in wizard_text:
+                return kw
+        return None
+
+    def _identity_line(self) -> dict | None:
+        """当前身份对应的节点链。"""
+        identity = self.state.extra.get("identity")
+        if not identity:
+            return None
+        from ..pack.anchors import parse_identity_lines
+        for line in parse_identity_lines(self.pack):
+            if line["identity"] == identity:
+                return line
+        return None
+
+    def _sync_identity_flags(self) -> list[dict]:
+        """模型写的自然名 flag → 线:<节点> 登记（幂等）。"""
+        line = self._identity_line()
+        if line is None:
+            return []
+        applied = []
+        for key in list(self.state.flags.keys()):
+            for node in line["nodes"]:
+                if f"线:{node}" not in self.state.flags and (key == f"线·{node}" or
+                                                             (node in key and "线" in key)):
+                    self.state.flags[f"线:{node}"] = True
+                    applied.append({"ref": f"flag:线:{node}", "op": "=", "v": 1,
+                                    "reason": "身份线节点达成"})
+        return applied
+
+    def _tasks_panel(self) -> TurnPayload:
+        self._sync_identity_flags()
+        line = self._identity_line()
+        if line is None:
+            body = [{
+                "type": "panel", "title": "任务",
+                "fields": [
+                    {"label": "身份线", "value": "此剧本无固定支线，命运随行动展开"},
+                    {"label": "已历事件", "value": "、".join(
+                        a["title"] for a in self.anchor_engine.anchors
+                        if a.get("is_triggered")) or "尚无"},
+                    {"label": "境界目标", "value": f"{self.state.realm_name} → "
+                        + (self.schema["realms"][self.state.realm_index + 1]["name"]
+                           if self.state.realm_index + 1 < len(self.schema["realms"]) else "大道尽头")},
+                ],
+            }]
+            return TurnPayload(turn_idx=self.turn_idx + 1, narrative=body,
+                               system_note="任务面板（引擎实时数据）", panel="tasks")
+
+        flags = self.state.flags
+        done_next = None
+        rows = []
+        for i, node in enumerate(line["nodes"]):
+            done = bool(flags.get(f"线:{node}"))
+            rows.append({"label": node, "value": "✓ 已成" if done else "· 未竟"})
+            if not done and done_next is None:
+                done_next = len(rows) - 1
+        body = [{
+            "type": "panel", "title": f"身份线 · {line['identity']}",
+            "fields": rows + [{"label": "当前所指", "value":
+                               (line["nodes"][done_next] if done_next is not None else "全线功成")}],
+        }]
+        return TurnPayload(turn_idx=self.turn_idx + 1, narrative=body,
+                           system_note="任务面板（引擎实时数据）", panel="tasks")
+
     # ---- 裁决回合 ----------------------------------------------------------------
 
     def _adjudicate(self, user_input: str) -> Iterator[tuple[str, object]]:
         turn = self.turn_idx + 1
+        # 身份线存在时，向模型注入节点推进规则（进稳定前缀）
+        line = self._identity_line()
+        extra_system = ""
+        if line:
+            nodes_hint = "、".join(line["nodes"])
+            extra_system = (
+                f"\n\n【身份线 · {line['identity']}】玩家的支线进程：{nodes_hint}。\n"
+                "当剧情确实完成某节点时，用 {\"flag\":\"线·<节点名>\"} 标记（每节点至多一次）；"
+                "禁止跳步、禁止凭空完成。"
+            )
         messages = assemble_messages(
             self.pack, self.characters, self.state, self.recent,
             self.rolling_summary, self.anchor_engine.context_block(turn),
-            user_input, turn,
+            user_input, turn, extra_system=extra_system,
         )
-        data = self.backend.generate_json(messages, max_tokens=512, temperature=0.8)
+        try:
+            data = self.backend.generate_json(messages, max_tokens=600, temperature=0.8)
+        except Exception:
+            # 裁决彻底失败（重试仍非法）：优雅降级为引擎旁白，不让回合卡死
+            note = ("命运的笔锋顿了顿——这一瞬世界没能推演下去。"
+                    "换一种行动试试。")
+            payload = TurnPayload(
+                turn_idx=turn,
+                narrative=[{"type": "narration", "text": note},
+                           {"type": "broadcast", "fields": self.state.broadcast()}],
+                choices=self._engine_choices(),
+            )
+            self._emit(payload, player_input=user_input)
+            yield ("turn", payload)
+            return
+
+        # 向导首回合：解析身份并注入后续身份线指令（稳定前缀随之前进一次）
+        if user_input.startswith("【人物已定】") and not self.state.extra.get("identity"):
+            identity = self._resolve_identity(user_input)
+            if identity:
+                self.state.extra["identity"] = identity
+
         narrative_text = str(data.get("narrative", "")).strip() or "（这一刻，什么也没有发生。）"
-        effects = data.get("effects", []) or []
+        effects = [e for e in (data.get("effects") or []) if isinstance(e, dict)]
 
         applied, _rejected = self.state.apply_effects(effects)
-        anchor_requests = [str(e["anchor"]) for e in effects if isinstance(e, dict) and "anchor" in e]
+        # 身份线节点自动登记：模型写的自然名 flag → 线:<节点>
+        applied += self._sync_identity_flags()
+
+        # 锚点请求按关键词去重（模型会对同一锚点连续请求）
+        seen_reqs: set[str] = set()
+        anchor_requests = []
+        for e in effects:
+            if "anchor" in e and str(e["anchor"]) not in seen_reqs:
+                seen_reqs.add(str(e["anchor"]))
+                anchor_requests.append(str(e["anchor"]))
         fired = self.anchor_engine.evaluate(self.state, turn, anchor_requests)
         if fired:
             applied.append({"ref": "anchor", "op": "=",

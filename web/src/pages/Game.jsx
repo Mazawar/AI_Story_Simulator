@@ -153,8 +153,23 @@ export default function Game() {
             if (p.choices && p.choices.length) {
               extra.push({ type: 'choices', options: p.choices })
             }
-            if (p.deltas && p.deltas.length) {
-              extra.push({ type: 'deltas', items: p.deltas })
+            const all = p.deltas || []
+            const numeric = all.filter((d) => d.ref === '灵石' || d.ref === '修为' || String(d.ref).startsWith('item:'))
+            const progress = all.filter((d) => String(d.ref).startsWith('flag:') || d.ref === 'anchor')
+            if (numeric.length) {
+              extra.push({ type: 'deltas', items: numeric })
+            }
+            if (progress.length) {
+              const seen = new Set()
+              const names = []
+              for (const d of progress) {
+                const label = String(d.ref).replace(/^(flag:|anchor$)/, '').trim()
+                const key = d.ref + '|' + d.reason
+                if (label && !seen.has(key)) { seen.add(key); names.push(d.reason || label) }
+              }
+              if (names.length) {
+                extra.push({ type: 'note', text: '剧情推进：' + [...new Set(names)].join('、') })
+              }
             }
             setBlocks((b) => [...b, ...(p.narrative || []), ...extra])
             setStream('')

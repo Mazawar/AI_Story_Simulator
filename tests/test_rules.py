@@ -44,6 +44,19 @@ class TestApplyEffects(unittest.TestCase):
         _, rejected = st.apply_effects([{"ref": "战斗力", "op": "+", "v": 5, "reason": "x"}])
         self.assertEqual(len(rejected), 1)
 
+    def test_stone_gain_clamped(self):
+        st = new_state()
+        applied, _ = st.apply_effects([{"ref": "灵石", "op": "+", "v": 100, "reason": "神手谷机缘"}])
+        self.assertEqual(applied[0]["v"], 30.0)
+        self.assertEqual(st.stones, 40)
+        self.assertIn("压缩", applied[0]["reason"])
+
+    def test_item_count_clamped(self):
+        st = new_state()
+        st.apply_effects([{"item": "筑基丹", "action": "add", "note": "数量 +100"}])
+        entry = next(i for i in st.inventory if i["name"] == "筑基丹")
+        self.assertEqual(entry["count"], 9)
+
     def test_item_add_remove(self):
         st = new_state()
         st.apply_effects([{"item": "灵芝", "action": "add", "note": "数量 +2"}])

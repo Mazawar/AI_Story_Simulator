@@ -7,9 +7,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 
 from ..core.engine import DirectEngine
+
+log = logging.getLogger("story.play")
 
 
 class PlaySession:
@@ -18,6 +21,18 @@ class PlaySession:
         self.loop: asyncio.AbstractEventLoop | None = None
         self._subscribers: list[asyncio.Queue] = []
         self._turn_lock = threading.Lock()
+        # 回合异常必须留痕（launcher.log），否则打包环境无 stdout 无法诊断
+        if not log.handlers:
+            log.setLevel(logging.INFO)
+            try:
+                from .. import config
+                config.ensure_runtime_dirs()
+                handler = logging.FileHandler(config.DATA_DIR / "play_errors.log",
+                                              encoding="utf-8")
+                handler.setFormatter(logging.Formatter("%(asctime)s\n%(message)s"))
+                log.addHandler(handler)
+            except Exception:
+                pass
 
     # ---- 订阅 ---------------------------------------------------------------
 
@@ -56,6 +71,7 @@ class PlaySession:
                     elif kind in ("note", "turn"):
                         self._publish_from_thread({"type": kind, "payload": data.to_dict()})
             except Exception as e:  # 推理失败也要通知前端，避免界面卡在等待
+                log.exception("回合执行失败（输入=%r）", text[:50])
                 self._publish_from_thread({"type": "error", "message": str(e)})
 
 

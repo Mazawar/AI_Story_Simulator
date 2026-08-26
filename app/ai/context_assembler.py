@@ -25,11 +25,13 @@ def _clip(text: str, budget: int) -> str:
 
 def assemble_messages(pack: Pack, characters: list[dict], state, recent_turns: list[dict],
                       rolling_summary: str, anchor_block: str,
-                      player_input: str, turn: int) -> list[dict]:
+                      player_input: str, turn: int,
+                      *, extra_system: str = "") -> list[dict]:
     """组装引擎模式的一轮上下文。
 
     state: core.rules.NumericState；recent_turns: [{"input","text"}]（旧→新）。
-    世界观文本进入前剥除揭晓点行（剧透隔离）。
+    世界观文本进入前剥除揭晓点行（剧透隔离）；extra_system 追加剧本级指令
+    （如身份线推进规则）到稳定前缀尾部。
     """
     from ..pack.anchors import strip_reveals
 
@@ -47,7 +49,7 @@ def assemble_messages(pack: Pack, characters: list[dict], state, recent_turns: l
         f"【{c['name']} · {_clip(c['desc'], CARD_BUDGET)}】" for c in ranked[:CARDS_MAX]
     )
 
-    system = ENGINE_SYSTEM + f"""
+    system = ENGINE_SYSTEM + (extra_system or "") + f"""
 
 【世界观】
 {world_text}
