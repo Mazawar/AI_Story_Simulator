@@ -7,6 +7,7 @@ Qwen3 等思考型模型的处理：
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterator
 from pathlib import Path
@@ -166,6 +167,19 @@ class LocalBackend(LLMBackend):
             stop=stop or None,
         )
         return strip_think(out["choices"][0]["message"]["content"] or "")
+
+    def generate_json(self, messages: list[Message], *, max_tokens: int = 1024,
+                      temperature: float = 0.3) -> dict:
+        """裁决生成：GBNF 语法强制输出合法裁决 JSON。"""
+        from .gbnf import grammar_object
+
+        out = self.llm.create_chat_completion(
+            messages=prepare_messages(messages, no_think=self.no_think),
+            max_tokens=max_tokens,
+            temperature=temperature,
+            grammar=grammar_object(),
+        )
+        return json.loads(strip_think(out["choices"][0]["message"]["content"] or "{}"))
 
     def stream(self, messages: list[Message], *, max_tokens: int = 1024,
                temperature: float = 0.8, stop: list[str] | None = None) -> Iterator[str]:

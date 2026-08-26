@@ -106,6 +106,33 @@ export function BlockView({ block, onChoice, entities }) {
         </div>
       )
 
+    case 'panel':
+      return (
+        <div className="panel-block">
+          <div className="panel-block-title">『{block.title}』</div>
+          <div className="panel-block-grid">
+            {(block.fields || []).map((f, i) => (
+              <span className="panel-block-field" key={i}>
+                <span className="broadcast-label">{f.label}</span>
+                <span className="broadcast-value">{f.value}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )
+
+    case 'deltas':
+      return (
+        <div className="deltas-row">
+          {(block.items || []).map((d, i) => (
+            <span key={i} className={d.op === '+' ? 'delta-chip plus' : 'delta-chip minus'}>
+              {d.op === '+' ? '▲' : '▼'} {d.ref} {d.op}{d.v}
+              {d.reason ? <em className="delta-reason">{d.reason}</em> : null}
+            </span>
+          ))}
+        </div>
+      )
+
     case 'note':
       return <div className="system-note">〔{block.text}〕</div>
 

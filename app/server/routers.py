@@ -84,14 +84,14 @@ def list_packs(request: Request):
 
 @router.get("/plays")
 def list_plays(request: Request):
-    """最近的直通模式对局（续玩入口数据）。"""
+    """最近的对局（续玩入口数据，含引擎/直通两种模式）。"""
     with _db(request).locked() as conn:
         rows = conn.execute(
-            "SELECT p.id, p.turn_count, p.updated_at, s.title AS story_title,"
+            "SELECT p.id, p.turn_count, p.updated_at, p.mode, s.title AS story_title,"
             " (SELECT summary FROM saves WHERE playthrough_id = p.id"
             "  ORDER BY updated_at DESC LIMIT 1) AS save_summary"
             " FROM playthroughs p JOIN storys s ON s.id = p.story_id"
-            " WHERE p.mode = 'direct' AND p.turn_count > 0"
+            " WHERE p.turn_count > 0"
             " ORDER BY p.updated_at DESC LIMIT 8"
         ).fetchall()
     return {"plays": [dict(r) for r in rows]}
@@ -111,14 +111,27 @@ def create_play(request: Request, body: PlayRequest):
     db = _db(request)
     pack_id = dao.packs.upsert_pack(db, pack)
     story_id = dao.packs.get_story_for_pack(db, pack_id, pack.title)
-    playthrough_id = dao.plays.create_playthrough(db, story_id, mode="direct")
 
-    n_ctx = pick_context_window(len(pack.system_prompt()))
-    engine = DirectEngine(db, _shared_backend(db, request.app.state.dry_run, n_ctx),
-                          pack, playthrough_id, n_ctx=n_ctx)
+    mode = "engine"      # 引擎模式默认（数值/面板/锚点由代码执行）；?mode=direct 调试
+    if request.query_params.get("mode") == "direct":
+        mode = "direct"
+    playthrough_id = dao.plays.create_playthrough(db, story_id, mode=mode)
+
+    if mode == "engine":
+        from ..core.engine_mode import EngineSession
+
+        engine = EngineSession(db, _shared_backend(db, request.app.state.dry_run, 8192),
+                               pack, playthrough_id)
+        engine._persist_state()
+        backend_name, n_ctx = engine.backend.name, 8192
+    else:
+        n_ctx = pick_context_window(len(pack.system_prompt()))
+        engine = DirectEngine(db, _shared_backend(db, request.app.state.dry_run, n_ctx),
+                              pack, playthrough_id, n_ctx=n_ctx)
+        backend_name = engine.backend.name
     REGISTRY.put(playthrough_id, PlaySession(engine))
     return {"playthrough_id": playthrough_id, "pack_title": pack.title,
-            "backend": engine.backend.name, "n_ctx": n_ctx}
+            "backend": backend_name, "n_ctx": n_ctx, "mode": mode}
 
 
 def _session_or_404(playthrough_id: int) -> PlaySession:
@@ -130,16 +143,16 @@ def _session_or_404(playthrough_id: int) -> PlaySession:
 
 @router.post("/play/{playthrough_id}/resume")
 def resume_play(request: Request, playthrough_id: int):
-    """续玩：重建引擎（优先用最新存档快照，无存档则从回合历史重建）。"""
+    """续玩：重建引擎（引擎模式用持久化状态；直通模式用存档快照/回合重建）。"""
     db = _db(request)
     with db.locked() as conn:
         row = conn.execute(
-            "SELECT p.id, p.turn_count, s.title AS story_title, pk.raw_text AS pack_text,"
-            " pk.file_path AS pack_file"
+            "SELECT p.id, p.turn_count, p.mode, p.player_json, p.rolling_summary,"
+            " s.title AS story_title, pk.raw_text AS pack_text, pk.file_path AS pack_file"
             " FROM playthroughs p"
             " JOIN storys s ON s.id = p.story_id"
             " LEFT JOIN packs pk ON pk.id = s.source_pack_id"
-            " WHERE p.id = ? AND p.mode = 'direct'",
+            " WHERE p.id = ?",
             (playthrough_id,),
         ).fetchone()
         if row is None:
@@ -168,6 +181,23 @@ def resume_play(request: Request, playthrough_id: int):
                     raw_text=row["pack_text"],
                     sections=split_sections(row["pack_text"]))
 
+    mode = row["mode"] or "direct"
+    if mode == "engine":
+        from ..core.engine_mode import EngineSession
+        from ..pack.numeric import parse_numeric_schema
+        from ..core.rules import NumericState
+
+        state = NumericState(parse_numeric_schema(pack),
+                             json.loads(row["player_json"]) if row["player_json"] else None)
+        engine = EngineSession(db, _shared_backend(db, request.app.state.dry_run, 8192),
+                               pack, playthrough_id, state=state,
+                               rolling_summary=row["rolling_summary"] or "")
+        REGISTRY.put(playthrough_id, PlaySession(engine))
+        return {"playthrough_id": playthrough_id, "pack_title": pack.title,
+                "backend": engine.backend.name, "n_ctx": 8192, "mode": "engine",
+                "resumed": True, "turn_count": engine.turn_idx}
+
+    # ---- 直通模式续玩 -----------------------------------------------------------
     # 重建消息历史
     if save_row is not None:
         history = json.loads(save_row["snapshot_json"]).get("history", [])

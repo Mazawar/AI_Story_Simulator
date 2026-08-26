@@ -33,6 +33,11 @@ local = [
     { name = "llama-cpp-python" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pillow" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.110" },
@@ -45,6 +50,9 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.29" },
 ]
 provides-extras = ["local", "desktop", "dev", "embed"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pillow", specifier = ">=12.3.0" }]
 
 [[package]]
 name = "altgraph"

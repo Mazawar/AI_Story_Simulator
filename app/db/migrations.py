@@ -260,7 +260,13 @@ def _v1(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA user_version = 1")
 
 
-MIGRATIONS: list[tuple[int, callable]] = [(1, _v1)]
+def _v2(conn: sqlite3.Connection) -> None:
+    # 引擎模式：滚动摘要 + 锚点触发记录（v2）
+    conn.execute("ALTER TABLE playthroughs ADD COLUMN rolling_summary TEXT")
+    conn.execute("PRAGMA user_version = 2")
+
+
+MIGRATIONS: list[tuple[int, callable]] = [(1, _v1), (2, _v2)]
 
 
 def migrate(db: Database) -> int:

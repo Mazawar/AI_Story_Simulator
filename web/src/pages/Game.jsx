@@ -148,7 +148,15 @@ export default function Game() {
           if (ev.type === 'delta') {
             setStream((s) => s + ev.text)
           } else if (ev.type === 'turn') {
-            setBlocks((b) => [...b, ...(ev.payload.narrative || [])])
+            const p = ev.payload
+            const extra = []
+            if (p.choices && p.choices.length) {
+              extra.push({ type: 'choices', options: p.choices })
+            }
+            if (p.deltas && p.deltas.length) {
+              extra.push({ type: 'deltas', items: p.deltas })
+            }
+            setBlocks((b) => [...b, ...(p.narrative || []), ...extra])
             setStream('')
             setBusy(false)
           } else if (ev.type === 'note') {

@@ -34,3 +34,8 @@ include = ["app*"]
 [tool.uv]
 # 打包/开发环境一律装齐（本地图形界面即核心形态）
 default-groups = "all"
+
+[dependency-groups]
+dev = [
+    "pillow>=12.3.0",
+]

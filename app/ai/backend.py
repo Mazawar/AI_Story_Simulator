@@ -72,3 +72,14 @@ class CannedBackend(LLMBackend):
             "> **神秘声音：** 世界听见了你的声音，但此刻无人应答。\n"
             "(演练模式未接入真实模型——这是 Canned 后端的固定回复，用于验证管线。)"
         )
+
+    def generate_json(self, messages: list[Message], *, max_tokens: int = 1024,
+                      temperature: float = 0.3) -> dict:
+        """引擎模式演练：返回固定裁决 JSON（含一次数值变化，供管线验证）。"""
+        user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+        head = user.strip()[:24] or "(沉默)"
+        return {
+            "narrative": f"(演练旁白) 你行动了：「{head}」。世界以微妙的方式回应了你。\n"
+                         "> **神秘声音：** 因果已记下这一笔。",
+            "effects": [{"ref": "灵石", "op": "+", "v": 1, "reason": "演练奖励"}],
+        }

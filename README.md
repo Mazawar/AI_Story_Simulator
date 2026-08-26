@@ -17,7 +17,7 @@
 - [x] 模型下载：`story-sim models fetch qwen3-1.7b`（HF + 国内镜像双源，断点续传）
 - [x] 角色创建向导（剧本包首轮分步选择 → 原生 UI）/ 实体链接 Inspector 卡（角色名可点击）
 - [x] 续玩入口：剧本架「未竟之局」卡片，存档快照恢复（无存档时从回合历史重建）
-- [ ] 引擎模式：数值/面板/锚点/章节结算（阶段 2）
+- [x] **引擎模式（阶段 2）**：数值守恒（白名单裁决 + 防刷子衰减 + 时间流规则）、面板真数据（修士面板/章节结算）、锚点系统（条件 DSL + 剧透隔离）、上下文组装器（首回合 14s，直通模式 190s）、滚动摘要、GBNF 语法约束生成
 - [ ] 小说拆解 + 质量门（阶段 3）
 
 ## 成品使用（重要）
@@ -53,7 +53,7 @@ uv run story-sim migrate
 uv run story-sim packs list                    # 剧本包切分检查
 uv run story-sim demo --pack 凡人              # CLI 直通模式
 uv run story-sim serve --dev --dry-run         # 本地服务（固定 token=dev）
-uv run python -m unittest discover -s tests    # 测试（52 项）
+uv run python -m unittest discover -s tests    # 测试（102 项）
 
 # 前端开发（热更新；另开终端跑 serve --dev）
 cd web && npm install && npm run dev           # Vite 5173，/api 代理到 8765
@@ -87,7 +87,7 @@ build/            # PyInstaller spec + make_exe.py 一键打包
 models/           # GGUF 模型（gitignore，用 models fetch 下载）
 data/             # story_simulator.db（运行时生成）
 script/           # 剧本包素材（系统提示词文档，非小说）
-tests/            # 单元测试（52 项）
+tests/            # 单元测试（102 项）
 dist/             # 本地构建输出（正式产物在仓库外 AIStorySimulator-release/）
 ```
 

@@ -23,7 +23,7 @@ class TestDatabase(unittest.TestCase):
 
     def test_migrate_idempotent(self):
         self.assertEqual(migrate(self.db), self.db.schema_version())
-        self.assertEqual(self.db.schema_version(), 1)
+        self.assertEqual(self.db.schema_version(), 2)
 
     def test_settings_roundtrip(self):
         settings_dao.set_setting(self.db, "api_base_url", "https://api.example.com/v1")

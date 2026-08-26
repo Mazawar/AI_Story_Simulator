@@ -531,6 +531,7 @@ imported by:
  &#8226;   <a href="#app.ai.local">app.ai.local</a>
  &#8226;   <a href="#app.ai.remote">app.ai.remote</a>
  &#8226;   <a href="#app.core.engine">app.core.engine</a>
+ &#8226;   <a href="#app.core.engine_mode">app.core.engine_mode</a>
  &#8226;   <a href="#asyncio.base_events">asyncio.base_events</a>
  &#8226;   <a href="#asyncio.coroutines">asyncio.coroutines</a>
  &#8226;   <a href="#bottle">bottle</a>
@@ -4511,11 +4512,15 @@ imported by:
  &#8226;   <a href="#anyio.streams.tls">anyio.streams.tls</a>
  &#8226;   <a href="#anyio.to_thread">anyio.to_thread</a>
  &#8226;   <a href="#app.ai.backend">app.ai.backend</a>
+ &#8226;   <a href="#app.ai.context_assembler">app.ai.context_assembler</a>
  &#8226;   <a href="#app.ai.local">app.ai.local</a>
  &#8226;   <a href="#app.ai.remote">app.ai.remote</a>
  &#8226;   <a href="#app.ai.router">app.ai.router</a>
  &#8226;   <a href="#app.config">app.config</a>
+ &#8226;   <a href="#app.core.anchors">app.core.anchors</a>
  &#8226;   <a href="#app.core.engine">app.core.engine</a>
+ &#8226;   <a href="#app.core.engine_mode">app.core.engine_mode</a>
+ &#8226;   <a href="#app.core.rules">app.core.rules</a>
  &#8226;   <a href="#app.core.state">app.core.state</a>
  &#8226;   <a href="#app.db.dao.packs">app.db.dao.packs</a>
  &#8226;   <a href="#app.db.dao.plays">app.db.dao.plays</a>
@@ -4523,9 +4528,11 @@ imported by:
  &#8226;   <a href="#app.db.database">app.db.database</a>
  &#8226;   <a href="#app.db.migrations">app.db.migrations</a>
  &#8226;   <a href="#app.launcher">app.launcher</a>
+ &#8226;   <a href="#app.pack.anchors">app.pack.anchors</a>
  &#8226;   <a href="#app.pack.creator">app.pack.creator</a>
  &#8226;   <a href="#app.pack.loader">app.pack.loader</a>
  &#8226;   <a href="#app.pack.models">app.pack.models</a>
+ &#8226;   <a href="#app.pack.numeric">app.pack.numeric</a>
  &#8226;   <a href="#app.render.contract">app.render.contract</a>
  &#8226;   <a href="#app.render.narrative_parser">app.render.narrative_parser</a>
  &#8226;   <a href="#app.server">app.server</a>
@@ -8194,6 +8201,8 @@ imports:
   <div class="import">
 imported by:
     <a href="#app.ai.backend">app.ai.backend</a>
+ &#8226;   <a href="#app.ai.context_assembler">app.ai.context_assembler</a>
+ &#8226;   <a href="#app.ai.gbnf">app.ai.gbnf</a>
  &#8226;   <a href="#app.ai.local">app.ai.local</a>
  &#8226;   <a href="#app.ai.prompts">app.ai.prompts</a>
  &#8226;   <a href="#app.ai.remote">app.ai.remote</a>
@@ -8225,7 +8234,45 @@ imported by:
  &#8226;   <a href="#app.ai.remote">app.ai.remote</a>
  &#8226;   <a href="#app.ai.router">app.ai.router</a>
  &#8226;   <a href="#app.core.engine">app.core.engine</a>
+ &#8226;   <a href="#app.core.engine_mode">app.core.engine_mode</a>
  &#8226;   <a href="#app.server.routers">app.server.routers</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="app.ai.context_assembler"></a>
+  <a target="code" href="///D:/WorkSpace/PythonProject/AI_Story_Simulator/app/ai/context_assembler.py" type="text/plain"><tt>app.ai.context_assembler</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#__future__">__future__</a>
+ &#8226;   <a href="#app.ai">app.ai</a>
+ &#8226;   <a href="#app.ai.prompts.wrapper">app.ai.prompts.wrapper</a>
+ &#8226;   <a href="#app.pack.anchors">app.pack.anchors</a>
+ &#8226;   <a href="#app.pack.models">app.pack.models</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.core.engine_mode">app.core.engine_mode</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="app.ai.gbnf"></a>
+  <a target="code" href="///D:/WorkSpace/PythonProject/AI_Story_Simulator/app/ai/gbnf.py" type="text/plain"><tt>app.ai.gbnf</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#app.ai">app.ai</a>
+ &#8226;   <a href="#llama_cpp">llama_cpp</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.ai.local">app.ai.local</a>
 
   </div>
 
@@ -8240,6 +8287,8 @@ imports:
  &#8226;   <a href="#__future__">__future__</a>
  &#8226;   <a href="#app.ai">app.ai</a>
  &#8226;   <a href="#app.ai.backend">app.ai.backend</a>
+ &#8226;   <a href="#app.ai.gbnf">app.ai.gbnf</a>
+ &#8226;   <a href="#json">json</a>
  &#8226;   <a href="#llama_cpp">llama_cpp</a>
  &#8226;   <a href="#pathlib">pathlib</a>
  &#8226;   <a href="#re">re</a>
@@ -8282,7 +8331,8 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#app.core.engine">app.core.engine</a>
+    <a href="#app.ai.context_assembler">app.ai.context_assembler</a>
+ &#8226;   <a href="#app.core.engine">app.core.engine</a>
 
   </div>
 
@@ -8374,9 +8424,30 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#app.core.engine">app.core.engine</a>
+    <a href="#app.core.anchors">app.core.anchors</a>
+ &#8226;   <a href="#app.core.engine">app.core.engine</a>
+ &#8226;   <a href="#app.core.engine_mode">app.core.engine_mode</a>
+ &#8226;   <a href="#app.core.rules">app.core.rules</a>
  &#8226;   <a href="#app.core.state">app.core.state</a>
  &#8226;   <a href="#run_launcher.py">run_launcher.py</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="app.core.anchors"></a>
+  <a target="code" href="///D:/WorkSpace/PythonProject/AI_Story_Simulator/app/core/anchors.py" type="text/plain"><tt>app.core.anchors</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#__future__">__future__</a>
+ &#8226;   <a href="#app.core">app.core</a>
+ &#8226;   <a href="#app.core.rules">app.core.rules</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.core.engine_mode">app.core.engine_mode</a>
 
   </div>
 
@@ -8405,6 +8476,58 @@ imported by:
     <a href="#app.core">app.core</a>
  &#8226;   <a href="#app.server.routers">app.server.routers</a>
  &#8226;   <a href="#app.server.sessions">app.server.sessions</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="app.core.engine_mode"></a>
+  <a target="code" href="///D:/WorkSpace/PythonProject/AI_Story_Simulator/app/core/engine_mode.py" type="text/plain"><tt>app.core.engine_mode</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#'collections.abc'">'collections.abc'</a>
+ &#8226;   <a href="#__future__">__future__</a>
+ &#8226;   <a href="#app.ai.backend">app.ai.backend</a>
+ &#8226;   <a href="#app.ai.context_assembler">app.ai.context_assembler</a>
+ &#8226;   <a href="#app.core">app.core</a>
+ &#8226;   <a href="#app.core.anchors">app.core.anchors</a>
+ &#8226;   <a href="#app.core.rules">app.core.rules</a>
+ &#8226;   <a href="#app.db">app.db</a>
+ &#8226;   <a href="#app.db.dao">app.db.dao</a>
+ &#8226;   <a href="#app.db.database">app.db.database</a>
+ &#8226;   <a href="#app.pack.anchors">app.pack.anchors</a>
+ &#8226;   <a href="#app.pack.creator">app.pack.creator</a>
+ &#8226;   <a href="#app.pack.models">app.pack.models</a>
+ &#8226;   <a href="#app.pack.numeric">app.pack.numeric</a>
+ &#8226;   <a href="#app.render.contract">app.render.contract</a>
+ &#8226;   <a href="#app.render.narrative_parser">app.render.narrative_parser</a>
+ &#8226;   <a href="#json">json</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.server.routers">app.server.routers</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="app.core.rules"></a>
+  <a target="code" href="///D:/WorkSpace/PythonProject/AI_Story_Simulator/app/core/rules.py" type="text/plain"><tt>app.core.rules</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#__future__">__future__</a>
+ &#8226;   <a href="#app.core">app.core</a>
+ &#8226;   <a href="#re">re</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.core.anchors">app.core.anchors</a>
+ &#8226;   <a href="#app.core.engine_mode">app.core.engine_mode</a>
+ &#8226;   <a href="#app.server.routers">app.server.routers</a>
 
   </div>
 
@@ -8443,6 +8566,7 @@ imports:
 imported by:
     <a href="#app.ai.router">app.ai.router</a>
  &#8226;   <a href="#app.core.engine">app.core.engine</a>
+ &#8226;   <a href="#app.core.engine_mode">app.core.engine_mode</a>
  &#8226;   <a href="#app.db.dao">app.db.dao</a>
  &#8226;   <a href="#app.db.database">app.db.database</a>
  &#8226;   <a href="#app.db.migrations">app.db.migrations</a>
@@ -8470,6 +8594,7 @@ imports:
 imported by:
     <a href="#app.ai.router">app.ai.router</a>
  &#8226;   <a href="#app.core.engine">app.core.engine</a>
+ &#8226;   <a href="#app.core.engine_mode">app.core.engine_mode</a>
  &#8226;   <a href="#app.db">app.db</a>
  &#8226;   <a href="#app.db.dao">app.db.dao</a>
  &#8226;   <a href="#app.db.dao.packs">app.db.dao.packs</a>
@@ -8554,6 +8679,7 @@ imports:
 imported by:
     <a href="#app.ai.router">app.ai.router</a>
  &#8226;   <a href="#app.core.engine">app.core.engine</a>
+ &#8226;   <a href="#app.core.engine_mode">app.core.engine_mode</a>
  &#8226;   <a href="#app.db">app.db</a>
  &#8226;   <a href="#app.db.dao.packs">app.db.dao.packs</a>
  &#8226;   <a href="#app.db.dao.plays">app.db.dao.plays</a>
@@ -8639,11 +8765,33 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#app.pack.creator">app.pack.creator</a>
+    <a href="#app.pack.anchors">app.pack.anchors</a>
+ &#8226;   <a href="#app.pack.creator">app.pack.creator</a>
  &#8226;   <a href="#app.pack.loader">app.pack.loader</a>
  &#8226;   <a href="#app.pack.models">app.pack.models</a>
+ &#8226;   <a href="#app.pack.numeric">app.pack.numeric</a>
  &#8226;   <a href="#app.server.routers">app.server.routers</a>
  &#8226;   <a href="#run_launcher.py">run_launcher.py</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="app.pack.anchors"></a>
+  <a target="code" href="///D:/WorkSpace/PythonProject/AI_Story_Simulator/app/pack/anchors.py" type="text/plain"><tt>app.pack.anchors</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#__future__">__future__</a>
+ &#8226;   <a href="#app.pack">app.pack</a>
+ &#8226;   <a href="#app.pack.models">app.pack.models</a>
+ &#8226;   <a href="#re">re</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.ai.context_assembler">app.ai.context_assembler</a>
+ &#8226;   <a href="#app.core.engine_mode">app.core.engine_mode</a>
 
   </div>
 
@@ -8662,7 +8810,8 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#app.pack">app.pack</a>
+    <a href="#app.core.engine_mode">app.core.engine_mode</a>
+ &#8226;   <a href="#app.pack">app.pack</a>
 
   </div>
 
@@ -8700,11 +8849,35 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#app.core.engine">app.core.engine</a>
+    <a href="#app.ai.context_assembler">app.ai.context_assembler</a>
+ &#8226;   <a href="#app.core.engine">app.core.engine</a>
+ &#8226;   <a href="#app.core.engine_mode">app.core.engine_mode</a>
  &#8226;   <a href="#app.db.dao.packs">app.db.dao.packs</a>
  &#8226;   <a href="#app.pack">app.pack</a>
+ &#8226;   <a href="#app.pack.anchors">app.pack.anchors</a>
  &#8226;   <a href="#app.pack.creator">app.pack.creator</a>
  &#8226;   <a href="#app.pack.loader">app.pack.loader</a>
+ &#8226;   <a href="#app.pack.numeric">app.pack.numeric</a>
+ &#8226;   <a href="#app.server.routers">app.server.routers</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="app.pack.numeric"></a>
+  <a target="code" href="///D:/WorkSpace/PythonProject/AI_Story_Simulator/app/pack/numeric.py" type="text/plain"><tt>app.pack.numeric</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#__future__">__future__</a>
+ &#8226;   <a href="#app.pack">app.pack</a>
+ &#8226;   <a href="#app.pack.models">app.pack.models</a>
+ &#8226;   <a href="#re">re</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.core.engine_mode">app.core.engine_mode</a>
  &#8226;   <a href="#app.server.routers">app.server.routers</a>
 
   </div>
@@ -8744,6 +8917,7 @@ imports:
   <div class="import">
 imported by:
     <a href="#app.core.engine">app.core.engine</a>
+ &#8226;   <a href="#app.core.engine_mode">app.core.engine_mode</a>
  &#8226;   <a href="#app.render">app.render</a>
 
   </div>
@@ -8763,6 +8937,7 @@ imports:
   <div class="import">
 imported by:
     <a href="#app.core.engine">app.core.engine</a>
+ &#8226;   <a href="#app.core.engine_mode">app.core.engine_mode</a>
 
   </div>
 
@@ -8806,10 +8981,13 @@ imports:
  &#8226;   <a href="#app.ai.local">app.ai.local</a>
  &#8226;   <a href="#app.config">app.config</a>
  &#8226;   <a href="#app.core.engine">app.core.engine</a>
+ &#8226;   <a href="#app.core.engine_mode">app.core.engine_mode</a>
+ &#8226;   <a href="#app.core.rules">app.core.rules</a>
  &#8226;   <a href="#app.db">app.db</a>
  &#8226;   <a href="#app.db.dao">app.db.dao</a>
  &#8226;   <a href="#app.pack">app.pack</a>
  &#8226;   <a href="#app.pack.models">app.pack.models</a>
+ &#8226;   <a href="#app.pack.numeric">app.pack.numeric</a>
  &#8226;   <a href="#app.server">app.server</a>
  &#8226;   <a href="#app.server.sessions">app.server.sessions</a>
  &#8226;   <a href="#asyncio">asyncio</a>
@@ -29518,7 +29696,9 @@ imports:
   <div class="import">
 imported by:
     <a href="#app.ai.backend">app.ai.backend</a>
+ &#8226;   <a href="#app.ai.local">app.ai.local</a>
  &#8226;   <a href="#app.ai.remote">app.ai.remote</a>
+ &#8226;   <a href="#app.core.engine_mode">app.core.engine_mode</a>
  &#8226;   <a href="#app.db.dao.plays">app.db.dao.plays</a>
  &#8226;   <a href="#app.render.contract">app.render.contract</a>
  &#8226;   <a href="#app.server.routers">app.server.routers</a>
@@ -29747,7 +29927,8 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#app.ai.local">app.ai.local</a>
+    <a href="#app.ai.gbnf">app.ai.gbnf</a>
+ &#8226;   <a href="#app.ai.local">app.ai.local</a>
  &#8226;   <a href="#llama_cpp._ctypes_extensions">llama_cpp._ctypes_extensions</a>
  &#8226;   <a href="#llama_cpp._internals">llama_cpp._internals</a>
  &#8226;   <a href="#llama_cpp._logger">llama_cpp._logger</a>
@@ -52076,8 +52257,11 @@ imported by:
  &#8226;   <a href="#anyio.streams.tls">anyio.streams.tls</a>
  &#8226;   <a href="#app.ai.backend">app.ai.backend</a>
  &#8226;   <a href="#app.ai.local">app.ai.local</a>
+ &#8226;   <a href="#app.core.rules">app.core.rules</a>
+ &#8226;   <a href="#app.pack.anchors">app.pack.anchors</a>
  &#8226;   <a href="#app.pack.creator">app.pack.creator</a>
  &#8226;   <a href="#app.pack.loader">app.pack.loader</a>
+ &#8226;   <a href="#app.pack.numeric">app.pack.numeric</a>
  &#8226;   <a href="#app.render.narrative_parser">app.render.narrative_parser</a>
  &#8226;   <a href="#argparse">argparse</a>
  &#8226;   <a href="#ast">ast</a>

@@ -55,7 +55,7 @@ exe = EXE(
     name="AIStorySimulator",
     debug=False,
     console=False,            # 双击 EXE 无黑框，日志写 data/launcher.log
-    icon=None,
+    icon=str(REPO / "assets" / "icon.ico"),
 )
 coll = COLLECT(
     exe,
