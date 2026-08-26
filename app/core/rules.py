@@ -16,6 +16,10 @@ _DECAY_FACTOR = 0.5
 # 单笔钳制：防模型一主观"天赐机缘"发巨款
 _MAX_STONE_GAIN = 30
 _MAX_ITEM_COUNT = 9
+# 滚动限流：最近 N 条已应用效果中同 ref 增益次数达到上限即拒收新增益
+_GAIN_WINDOW = 8
+_MAX_STONE_GAINS_IN_WINDOW = 2
+_MAX_PROGRESS_GAINS_IN_WINDOW = 3
 
 _REASON_STRIP_RE = re.compile(r"[\d０-９\s.,，。;；]+")
 
@@ -45,6 +49,7 @@ class NumericState:
         self.inventory: list[dict] = s.get("inventory", [])    # [{name,count,note}]
         self.flags: dict[str, bool] = s.get("flags", {})
         self.decay_counter: dict[str, int] = s.get("decay_counter", {})
+        self.gain_log: list[str] = s.get("gain_log", [])       # 近期增益记录 ["灵石","修为"...]
         self.extra: dict = s.get("extra", {})
 
     # ---- 序列化 ---------------------------------------------------------------
@@ -55,7 +60,8 @@ class NumericState:
             "age": self.age, "stones": self.stones, "progress": self.progress,
             "spirit": self.spirit, "location": self.location, "name": self.name,
             "inventory": self.inventory, "flags": self.flags,
-            "decay_counter": self.decay_counter, "extra": self.extra,
+            "decay_counter": self.decay_counter, "gain_log": self.gain_log[-_GAIN_WINDOW:],
+            "extra": self.extra,
         }
 
     @classmethod
@@ -168,6 +174,15 @@ class NumericState:
                 # 锚点触发请求：记录待 M3 锚点系统求值，这里透传
                 applied.append({"ref": f"anchor:{eff['anchor']}", "op": "=", "v": 1,
                                 "reason": "锚点触发请求"})
+            elif "location" in eff:
+                loc = str(eff.get("location", "")).strip()[:12]
+                if not loc:
+                    rejected.append({"effect": eff, "why": "地点为空"})
+                else:
+                    old = self.location
+                    self.location = loc
+                    applied.append({"ref": "地点", "op": "=", "v": 1,
+                                    "reason": f"{old or '未知'} → {loc}"})
             else:
                 rejected.append({"effect": eff, "why": "未知指令类型"})
         return applied, rejected
@@ -187,6 +202,12 @@ class NumericState:
 
         if "修为" in ref:
             delta = v if op == "+" else -v
+            if op == "+" and v > 0:
+                recent = self.gain_log[-_GAIN_WINDOW:]
+                if recent.count("修为") >= _MAX_PROGRESS_GAINS_IN_WINDOW:
+                    rejected.append({"effect": eff, "why": "心浮气躁，一时再难寸进"})
+                    return
+                self.gain_log.append("修为")
             new_progress = self.progress + delta
             if new_progress >= 100.0 and self._advance_stage():
                 self.progress = max(0.0, new_progress - 100.0)   # 溢出余量保留
@@ -197,9 +218,17 @@ class NumericState:
             return
 
         if any(c in ref for c in _CURRENCY_REFS):
-            if v > _MAX_STONE_GAIN:
-                reason += f"（机缘过大，被世界规则压缩至{_MAX_STONE_GAIN}）"
-                v = float(_MAX_STONE_GAIN)
+            if op == "+" and v > 0:
+                # 滚动限流：近期进项太密 → 拒收（打破"每轮都在捡钱"循环）
+                recent = self.gain_log[-_GAIN_WINDOW:]
+                if recent.count("灵石") >= _MAX_STONE_GAINS_IN_WINDOW:
+                    rejected.append({"effect": eff,
+                                     "why": "近日财源已足，再有进项须待新的机缘"})
+                    return
+                if v > _MAX_STONE_GAIN:
+                    reason += f"（机缘过大，被世界规则压缩至{_MAX_STONE_GAIN}）"
+                    v = float(_MAX_STONE_GAIN)
+                self.gain_log.append("灵石")
             key = _reason_key(reason)
             if key and v > 0 and op == "+":
                 n = self.decay_counter.get(key, 0)

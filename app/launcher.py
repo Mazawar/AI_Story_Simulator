@@ -9,11 +9,35 @@ from __future__ import annotations
 import logging
 import secrets
 import socket
+import sys
 import threading
 import time
 import webbrowser
 
 from . import config
+
+
+class _NullStream:
+    """无窗口打包后 sys.stdout/stderr 为 None，库触碰 .isatty() 即崩
+    （曾致 uvicorn 日志配置失败、EXE 启动即退）。用内存空流兜底。"""
+
+    def write(self, *_args) -> int:
+        return 0
+
+    def flush(self) -> None:
+        pass
+
+    def isatty(self) -> bool:
+        return False
+
+    def close(self) -> None:
+        pass
+
+
+if sys.stdout is None:
+    sys.stdout = _NullStream()
+if sys.stderr is None:
+    sys.stderr = _NullStream()
 
 
 def _log() -> logging.Logger:
@@ -44,7 +68,10 @@ def _start_server(port: int, token: str, dry_run: bool):
     from .server import create_app
 
     app = create_app(token=token, dry_run=dry_run)
-    conf = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
+    # log_config=None：跳过 uvicorn 自带 logging 配置（其流处理器依赖真实 stdout；
+    # 错误经 root logger 仍会进 data/play_errors.log / launcher.log）
+    conf = uvicorn.Config(app, host="127.0.0.1", port=port,
+                          log_level="error", log_config=None)
     server = uvicorn.Server(conf)
     threading.Thread(target=server.run, daemon=True).start()
     return server

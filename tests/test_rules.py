@@ -77,6 +77,15 @@ class TestApplyEffects(unittest.TestCase):
         self.assertTrue(st.flags["墨大夫真面目"])
         self.assertEqual(len(applied), 2)
 
+    def test_location_effect(self):
+        st = new_state()
+        st.location = "七玄门"
+        applied, rejected = st.apply_effects([{"location": "神手谷密林"}])
+        self.assertEqual(st.location, "神手谷密林")
+        self.assertEqual(rejected, [])
+        _, rejected = st.apply_effects([{"location": "   "}])
+        self.assertEqual(len(rejected), 1)
+
     def test_illegal_structure(self):
         st = new_state()
         _, rejected = st.apply_effects(["nonsense", 42, {"foo": "bar"}])
@@ -87,7 +96,9 @@ class TestAntiGrind(unittest.TestCase):
     def test_repeated_gain_decays(self):
         st = new_state()
         gains = []
-        for _ in range(6):
+        for i in range(6):
+            # 清空滚动窗以隔离验证"同理由衰减"公式本身
+            st.gain_log.clear()
             applied, _ = st.apply_effects([{"ref": "灵石", "op": "+", "v": 2, "reason": "采药卖出"}])
             gains.append(applied[0]["v"])
         # 前三次原值，之后 1, 0.5, 0.25 递减
@@ -95,11 +106,29 @@ class TestAntiGrind(unittest.TestCase):
         self.assertEqual(gains[3], 1)
         self.assertEqual(gains[4], 0.5)
         self.assertEqual(gains[5], 0.25)
-        self.assertEqual(st.stones, 10 + 2 + 2 + 2 + 1 + 0.5 + 0.25)
+
+    def test_gain_rate_limit(self):
+        """滚窗限流：近期进项过密时新增益被拒收（打破捡钱循环）。"""
+        st = new_state()
+        results = []
+        for i in range(5):
+            applied, rejected = st.apply_effects(
+                [{"ref": "灵石", "op": "+", "v": 5, "reason": f"来源{i}完全不同"}])
+            results.append("+" if applied else ("rejected" if rejected else "?"))
+        self.assertEqual(results, ["+", "+", "rejected", "rejected", "rejected"])
+
+    def test_progress_rate_limit(self):
+        st = new_state()
+        outs = []
+        for _ in range(4):
+            applied, rejected = st.apply_effects(
+                [{"ref": "修为", "op": "+", "v": 20, "reason": f"悟道途径{st.progress}"}])
+            outs.append("+" if applied else "rejected")
+        self.assertEqual(outs, ["+", "+", "+", "rejected"])
 
     def test_different_reason_not_decayed(self):
         st = new_state()
-        for reason in ("采药", "跑腿", "捡漏"):
+        for reason in ("采药", "跑腿"):
             applied, _ = st.apply_effects([{"ref": "灵石", "op": "+", "v": 2, "reason": reason}])
             self.assertEqual(applied[0]["v"], 2)
 

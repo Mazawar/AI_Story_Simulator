@@ -245,7 +245,7 @@ class EngineSession:
             user_input, turn, extra_system=extra_system,
         )
         try:
-            data = self.backend.generate_json(messages, max_tokens=600, temperature=0.8)
+            data = self.backend.generate_json(messages, max_tokens=900, temperature=0.8)
         except Exception:
             # 裁决彻底失败（重试仍非法）：优雅降级为引擎旁白，不让回合卡死
             note = ("命运的笔锋顿了顿——这一瞬世界没能推演下去。"
@@ -290,6 +290,20 @@ class EngineSession:
                     self.rolling_summary = (self.rolling_summary + "；" if self.rolling_summary else "") \
                         + f"事件【{a['title']}】已发生"
 
+        # 模型根据本轮剧情实时提议选项（清洗后采纳）；缺失/不合规回退状态机生成
+        model_choices = []
+        for c in (data.get("choices") or []):
+            if isinstance(c, str):
+                t = c.strip().lstrip("【】").strip()
+                if 2 <= len(t) <= 24:
+                    model_choices.append(t)
+        deduped = list(dict.fromkeys(model_choices))[:4]
+        if len(deduped) >= 2:
+            final_choices = [{"id": chr(65 + i), "text": t, "tags": [], "hint": ""}
+                             for i, t in enumerate(deduped)]
+        else:
+            final_choices = self._engine_choices()
+
         blocks = parse_narrative(narrative_text)
         blocks.append({"type": "broadcast", "fields": self.state.broadcast(applied)})
         entities = [
@@ -303,7 +317,7 @@ class EngineSession:
             entities=entities,
             deltas=[{"ref": d["ref"], "op": d["op"], "v": d["v"], "reason": d["reason"]}
                     for d in applied],
-            choices=self._engine_choices(),
+            choices=final_choices,
             fx={"level": "major"} if any(d["ref"] == "境界" for d in applied) else None,
         )
         self._emit(payload, player_input=user_input,
@@ -316,14 +330,42 @@ class EngineSession:
         yield ("turn", payload)
 
     def _engine_choices(self) -> list[dict]:
-        """引擎生成的四向选项（确定性，基于当前状态）。"""
-        opts = []
-        opts.append("闭关修炼，打磨修为" if self.state.progress < 60 else "闭关冲击瓶颈")
-        opts.append(f"在{self.state.location or '附近'}走动探察")
-        opts.append("寻人打听消息")
-        opts.append("清点行囊，谋划下一步")
+        """引擎生成的四向选项：随状态/身份线/世界暗流变化，不重复上一轮。"""
+        st = self.state
+        opts: list[str] = []
+
+        # 1) 修行向（随修为阶段变化）
+        if st.progress >= 70:
+            opts.append("闭关冲击瓶颈，力求突破")
+        elif st.inventory and any("丹" in i["name"] for i in st.inventory):
+            opts.append(f"服下{st.inventory[0]['name']}，借药力修炼")
+        else:
+            opts.append("静心吐纳，打磨修为")
+
+        # 2) 身份线当前节点行动
+        line = self._identity_line()
+        if line is not None:
+            nxt = next((n for n in line['nodes']
+                        if not self.state.flags.get(f'线:{n}')), None)
+            if nxt:
+                opts.append(f"着手推进身份线：{nxt}")
+
+        # 3) 世界暗流：未触发的最近时间表锚点（给方向不给剧透）
+        upcoming = [a for a in self.anchor_engine.anchors
+                    if not a.get('is_triggered') and a['kind'] == 'timeline'][:1]
+        if upcoming:
+            opts.append(f"向着「{upcoming[0]['title']}」的风声探寻")
+
+        # 4) 社交/地点向（随地点变化）
+        where = st.location or "此地"
+        opts.append(f"在{where}找人攀谈，打听近闻")
+        opts.append("换一处地方走走，见识风物")
+
+        # 去重并保证恰四项（与上轮不同的至少两项由状态差异自然产生）
+        seen: set[str] = set()
+        unique = [o for o in opts if not (o in seen or seen.add(o))]
         return [{"id": chr(65 + i), "text": t, "tags": [], "hint": ""}
-                for i, t in enumerate(opts)]
+                for i, t in enumerate(unique[:4])]
 
     # ---- 章节结算 ----------------------------------------------------------------
 

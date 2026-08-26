@@ -77,9 +77,11 @@ class CannedBackend(LLMBackend):
                       temperature: float = 0.3) -> dict:
         """引擎模式演练：返回固定裁决 JSON（含一次数值变化，供管线验证）。"""
         user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-        head = user.strip()[:24] or "(沉默)"
+        head = user.strip()[:20] or "(沉默)"
         return {
-            "narrative": f"(演练旁白) 你行动了：「{head}」。世界以微妙的方式回应了你。\n"
+            "narrative": f"(演练旁白) 你行动了：「{head}」。山道尽头传来陌生的脚步声，"
+                         "一名背药篓的老者朝你走来，目光在你腰间的竹牌上停了一瞬。\n"
                          "> **神秘声音：** 因果已记下这一笔。",
             "effects": [{"ref": "灵石", "op": "+", "v": 1, "reason": "演练奖励"}],
+            "choices": ["迎上老者，主动搭话", "退到路旁，暗中观察", "原路返回", "屏息藏进林中"],
         }

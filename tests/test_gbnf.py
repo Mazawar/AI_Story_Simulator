@@ -27,6 +27,24 @@ class TestSalvage(unittest.TestCase):
     def test_empty_input(self):
         self.assertIsNone(salvage_adjudication(""))
 
+    def test_salvage_keeps_complete_effects(self):
+        # narrative 已闭合、effects 中途截断：已配平的对象应被保留
+        text = ('{"narrative": "他推门而入。", "effects": ['
+                '{"ref": "灵石", "op": "+", "v": 5, "reason": "卖药"}, '
+                '{"ref": "灵石", "op": "+", "v": 3')
+        data = salvage_adjudication(text)
+        self.assertIsNotNone(data)
+        self.assertEqual(data["narrative"], "他推门而入。")
+        self.assertEqual(len(data["effects"]), 1)
+        self.assertEqual(data["effects"][0]["v"], 5)
+
+    def test_extract_objects_skips_strings_with_braces(self):
+        text = '{"narrative": "带括号 { 的文本"} tail {"flag":"x"}'
+        objs = __import__("app.ai.gbnf", fromlist=["_extract_complete_objects"]).__dict__[
+            "_extract_complete_objects"](text)
+        flag_objs = [o for o in objs if o.get("flag")]
+        self.assertEqual(flag_objs, [{"flag": "x"}])
+
 
 class TestGrammarCompiles(unittest.TestCase):
     def test_from_string(self):

@@ -81,7 +81,8 @@ def assemble_messages(pack: Pack, characters: list[dict], state, recent_turns: l
 {f'【世界动态】{anchor_block}' if anchor_block else ''}
 【玩家行动】{player_input}
 
-请输出本轮的叙事与裁决 JSON。"""
+【推进纪律】上述最近回合里已写过的事不得重演；本轮 narrative 必须落到具体新事件上
+（who/what/where 有其一即可），40~120 字。请输出叙事、effects 与 choices。"""
 
     return [
         {"role": "system", "content": system},
