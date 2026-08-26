@@ -11,23 +11,19 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from pathlib import Path
 
 from ..ai.backend import LLMBackend
+from ..ai.prompts.wrapper import DIRECT_WRAPPER
 from ..db import dao
 from ..db.database import Database
 from ..pack.models import Pack
 from ..render.contract import TurnPayload, note_payload
 from ..render.narrative_parser import parse_narrative
 
-# 直通模式输出合同：本地小模型会漂移成 LaTeX/引用前缀/重复问卷，
-# 在剧本包前加一层强约束包装（版本化于 prompts/，改动需跑测试回归）
-_WRAPPER_PATH = Path(__file__).resolve().parent.parent / "ai" / "prompts" / "direct_wrapper.txt"
-
 
 def _wrapped_system_prompt(pack: Pack) -> str:
-    wrapper = _WRAPPER_PATH.read_text(encoding="utf-8")
-    return wrapper + "\n" + pack.system_prompt()
+    """输出合同 + 剧本包全文（合同为 Python 常量，随 PYZ 打包，冻结安全）。"""
+    return DIRECT_WRAPPER + "\n" + pack.system_prompt()
 
 # 直通模式默认拦截的触发词（与三个剧本包「约束」章节一致）
 TRIGGER_WORDS: dict[str, str] = {
