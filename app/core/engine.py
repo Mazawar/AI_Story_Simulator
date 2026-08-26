@@ -10,11 +10,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 from ..ai.backend import LLMBackend
 from ..db import dao
 from ..db.database import Database
 from ..pack.models import Pack
-from ..render.contract import TurnPayload, narration_payload, note_payload
+from ..render.contract import TurnPayload, note_payload
+from ..render.narrative_parser import parse_narrative
 
 # 直通模式默认拦截的触发词（与三个剧本包「约束」章节一致）
 TRIGGER_WORDS: dict[str, str] = {
@@ -49,35 +52,55 @@ class DirectEngine:
         self.messages: list[dict] = [{"role": "system", "content": pack.system_prompt()}]
         if history:
             self.messages.extend(history)
-        self.turn_idx = int(
-            db.conn.execute(
+        with db.locked() as conn:
+            self.turn_idx = int(conn.execute(
                 "SELECT COALESCE(MAX(idx), 0) FROM turns WHERE playthrough_id = ?",
                 (playthrough_id,),
-            ).fetchone()[0]
-        )
+            ).fetchone()[0])
 
     # ---- 回合 ---------------------------------------------------------------
 
-    def handle(self, user_input: str) -> TurnPayload:
+    def stream_handle(self, user_input: str) -> Iterator[tuple[str, object]]:
+        """流式处理一个回合。
+
+        yield ("delta", 文本片段) 逐段输出；
+        yield ("note"|"turn", TurnPayload) 为该回合最终产物（已落库）。
+        """
         stripped = user_input.strip().strip("「」")
         if stripped in TRIGGER_WORDS:
             action = TRIGGER_WORDS[stripped]
             if action == "save":
-                return self._save("autosave")
-            if action == "load":
-                return self._load("autosave")
-            return self._emit(note_payload(
-                self.turn_idx + 1, _PANEL_NOTES.get(action, action), panel=action,
-            ), player_input=stripped)
+                yield ("note", self._save("autosave"))
+            elif action == "load":
+                yield ("note", self._load("autosave"))
+            else:
+                yield ("note", self._emit(note_payload(
+                    self.turn_idx + 1, _PANEL_NOTES.get(action, action), panel=action,
+                ), player_input=stripped))
+            return
 
         self.messages.append({"role": "user", "content": user_input})
+        pieces: list[str] = []
         try:
-            reply = self.backend.generate(self.messages, max_tokens=1024)
+            for piece in self.backend.stream(self.messages, max_tokens=1024):
+                pieces.append(piece)
+                yield ("delta", piece)
         except Exception:
             self.messages.pop()  # 失败回合不污染历史
             raise
+        reply = "".join(pieces)
         self.messages.append({"role": "assistant", "content": reply})
-        return self._emit(narration_payload(self.turn_idx + 1, reply), player_input=user_input)
+        yield ("turn", self._emit(
+            TurnPayload(turn_idx=self.turn_idx + 1, narrative=parse_narrative(reply)),
+            player_input=user_input,
+        ))
+
+    def handle(self, user_input: str) -> TurnPayload:
+        payload: TurnPayload | None = None
+        for kind, data in self.stream_handle(user_input):
+            if kind in ("note", "turn"):
+                payload = data
+        return payload
 
     def _emit(self, payload: TurnPayload, player_input: str | None = None) -> TurnPayload:
         dao.plays.add_turn(self.db, self.playthrough_id, payload.turn_idx,

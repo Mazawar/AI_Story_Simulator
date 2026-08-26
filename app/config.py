@@ -8,7 +8,8 @@ DATA_DIR = ROOT / "data"
 DB_PATH = DATA_DIR / "story_simulator.db"
 MODELS_DIR = ROOT / "models"
 SCRIPT_DIR = ROOT / "script"          # 剧本包素材（系统提示词文档，非小说）
-WEB_ASSETS_DIR = ROOT / "assets" / "web"
+WEB_DIR = ROOT / "web"                # React 前端源码
+WEB_DIST_DIR = WEB_DIR / "dist"       # 前端构建产物（发布模式由 FastAPI 托管）
 
 APP_NAME = "AI Story Simulator"
 APP_VERSION = "0.1.0"

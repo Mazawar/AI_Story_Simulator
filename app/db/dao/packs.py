@@ -47,14 +47,15 @@ def list_packs(db: Database) -> list[dict]:
 
 def get_story_for_pack(db: Database, pack_id: int, title: str) -> int:
     """取剧本包对应的 story（无则创建），返回 story id。"""
-    row = db.conn.execute(
-        "SELECT id FROM storys WHERE source_type = 'pack' AND source_pack_id = ?",
-        (pack_id,),
-    ).fetchone()
-    if row is not None:
-        return int(row["id"])
-    cur = db.conn.execute(
-        "INSERT INTO storys (title, source_type, source_pack_id) VALUES (?, 'pack', ?)",
-        (title, pack_id),
-    )
-    return int(cur.lastrowid)
+    with db.locked() as conn:
+        row = conn.execute(
+            "SELECT id FROM storys WHERE source_type = 'pack' AND source_pack_id = ?",
+            (pack_id,),
+        ).fetchone()
+        if row is not None:
+            return int(row["id"])
+        cur = conn.execute(
+            "INSERT INTO storys (title, source_type, source_pack_id) VALUES (?, 'pack', ?)",
+            (title, pack_id),
+        )
+        return int(cur.lastrowid)

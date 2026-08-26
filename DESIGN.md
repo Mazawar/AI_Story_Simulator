@@ -45,14 +45,14 @@
 | 语言 | Python 3.11+ | 用户要求；生态最适合本地 LLM |
 | 本地推理 | `llama-cpp-python`（GGUF） | CPU/GPU 通吃、可打包进 EXE、社区模型最多 |
 | 嵌入/检索 | `fastembed`（ONNX，CPU） | 体积小、无 PyTorch 依赖、中文模型齐全 |
-| 界面 | `PySide6`：**Widgets 做外壳**（剧本架/设置/向导），**QtWebEngine 做游戏视图** | 游戏视图用 HTML/CSS/JS 渲染——叙事流内嵌实体链接、面板组件化、动效与仪式感只有 Web 技术栈能低成本做到"新颖"；外壳用 Widgets 保持稳定。QWebChannel 做 Python↔JS 桥 |
+| 前端 | **React 18 + Vite + Ant Design**（`web/`，构建产物 `web/dist/`） | 组件生态成熟（面板/卡片/表单/动效），Vite 开发热更新；发布物是纯静态文件，用户无需 Node |
+| 本地服务 | **FastAPI + uvicorn**（仅绑定 127.0.0.1 + 一次性 token） | 前端↔引擎的标准 REST+SSE 接口；OpenAPI 自文档；LLM 流式输出走 SSE 天然匹配 |
+| 桌面壳 | **pywebview**（系统 WebView2），缺失时回退系统浏览器 | 比 QtWebEngine 轻 ~150MB，仍满足"打开 EXE 即成品" |
 | 数据库 | `sqlite3`（标准库） | 单文件、零运维、用户要求 |
 | 结构化输出 | 提示词约束 + JSON 修复重试 + llama.cpp GBNF 语法兜底 | 小模型 JSON 遵循度有限，需多层防护 |
 | 打包 | PyInstaller（**onedir** 模式）+ Inno Setup 安装器 | 模型体积 GB 级，onefile 每次启动解压到临时目录，不可接受 |
 
-**明确不引入**：PyTorch/transformers、向量数据库、前端构建工具链（游戏视图用原生 HTML/CSS/JS + 本地文件，无需 npm）、任何强制联网组件。
-
-WebEngine 代价：安装包 +约 150MB（相对模型体积可接受）；风险前置——阶段 0 的 PyInstaller 冒烟必须包含 WebEngine 页面。
+**明确不引入**：PyTorch/transformers、向量数据库、Qt（前端已由 React 接管，桌面壳走系统 WebView2）、任何强制联网组件。前端构建链（npm/Vite）仅开发期需要，发布物是纯静态 `web/dist/`，随 EXE 分发。
 
 ---
 
@@ -60,13 +60,15 @@ WebEngine 代价：安装包 +约 150MB（相对模型体积可接受）；风�
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│  UI 层                                                                    │
-│  [Widgets 外壳] 剧本架 · 角色创建向导 · 设置                              │
-│  [WebEngine 游戏视图] 叙事流 · 交互面板 · 实体链接 · 选项卡 · 动效          │
-│        ↕ QWebChannel (JSON 消息协议)                                      │
+│  前端 web/（React + Vite + Ant Design，构建产物 web/dist/）                │
+│  剧本架 · 角色创建向导 · 游戏视图（叙事流/交互面板/实体链接/选项卡/动效）   │
+│        ↕ HTTP（REST + SSE，仅 127.0.0.1 + 一次性 token）                  │
+├────────────────────────────────────────────────────────────┤
+│  本地服务层 server/（FastAPI）                                             │
+│  路由（packs/play/saves/settings）· 会话事件总线 · 静态资源托管            │
 ├────────────────────────────────────────────────────────────┤
 │  渲染契约层 render/                                                        │
-│  TurnPayload(结构化回合数据) → 面板组件渲染器 · 实体链接器 · 动效调度        │
+│  TurnPayload（结构化回合）· 叙事解析器（LLM 文本→渲染块）· 实体链接器      │
 ├────────────────────────────────────────────────────────────┤
 │  游戏引擎层 core/                                                          │
 │  回合循环 · 数值/状态机 · 触发词拦截 · 锚点事件调度 · 规则校验 · 存档        │
@@ -155,13 +157,25 @@ WebEngine 代价：安装包 +约 150MB（相对模型体积可接受）；风�
 ### 5.3 动效与"仪式感"
 
 - 数值浮动动画（+2 灵石）、境界突破全屏特效（丹香/天象，按剧本包 `fx` 配置）、名场面锚点触发的定格式呈现。
-- 动效资源为纯 CSS/JS（assets/web/ 下），按剧本包可开关；低配机器可全局关闭动效。
+- 动效资源随前端（web/src/styles）实现，按剧本包可开关；低配机器可全局关闭动效。
 
-### 5.4 桥接协议（QWebChannel）
+### 5.4 服务接口（FastAPI，REST + SSE）
 
-- Python → JS：`push_turn(TurnPayload)`、`push_panel_state(panel_key, data)`、`stream_delta(text)`（流式补字）。
-- JS → Python：`entity_click(ref)`、`action(name, payload)`（使用物品/追踪任务等）、`submit_choice(id)`、`submit_input(text)`。
-- 协议版本化（`proto_ver` 字段），前端资源随包分发，避免更新后错配。
+前端与本地服务之间走标准 HTTP（仅 127.0.0.1 + 一次性 token，`X-Auth-Token` 头或 `?token=` 查询参数，SSE 用后者）：
+
+| 端点 | 方法 | 说明 |
+|---|---|---|
+| `/api/packs` | GET | 剧本架列表（标题/章节数/字数） |
+| `/api/play` | POST | `{pack_title}` → 创建对局，返回 `playthrough_id` |
+| `/api/play/{id}/input` | POST | `{text}` → 提交玩家输入/触发词，异步执行 |
+| `/api/play/{id}/events` | GET | **SSE**：`delta`（流式补字）/ `turn`（整回合 TurnPayload）/ `note`（触发词/存档）/ `error`，15s 心跳 |
+| `/api/play/{id}/history` | GET | 历史回合 TurnPayload（断线重连恢复叙事流） |
+| `/api/play/{id}/saves` | GET | 存档槽列表 |
+| `/api/health` | GET | 健康检查 |
+
+- 生成在服务端后台线程执行，推理经事件总线发布到 SSE，前端只订阅渲染；对局会话串行化（同对局同时只有一个回合在跑）。
+- 前端开发模式：`npm run dev`（Vite 5173）代理 `/api` 到 127.0.0.1:8765；发布模式：FastAPI 直接托管 `web/dist/` 静态产物，pywebview 窗口加载。
+- 剧情渲染落地：**叙事解析器**（render/narrative_parser.py）把直通模式下 LLM 的纯文本输出解析为渲染块——`> **韩立：** …` → 对话块、`【境界 …｜灵石 …】` → 播报条块（字段化）、`【A】…` 选项行 → 选项块、其余 → 旁白块——前端按块类型映射 React 组件；引擎模式下 TurnPayload 由引擎直接产出，走同一组件集。
 
 ---
 
@@ -335,8 +349,8 @@ AI_Story_Simulator/
 │  ├─ ai/                     # backend.py local.py remote.py router.py prompts/
 │  ├─ ingest/                 # cleaner.py splitter.py chunker.py extractor.py gates.py
 │  ├─ db/                     # database.py(参数绑定) dao/ migrations.py
-│  └─ ui/                     # shell/(Widgets) game/(WebEngine壳) wizard/ settings/
-├─ assets/web/                # 游戏视图前端: index.html css/ js/ 组件
+│  └─ server/                 # app.py(FastAPI工厂+token鉴权) routers.py sessions.py(事件总线)
+├─ web/                       # React 前端：src/(pages/components) · 构建产物 web/dist/
 ├─ models/                    # GGUF + ONNX 模型文件
 ├─ data/                      # story_simulator.db(运行时)
 ├─ script/                    # 剧本包素材(已有三个)
@@ -349,7 +363,7 @@ AI_Story_Simulator/
 
 ## 12. 打包与分发
 
-- PyInstaller **onedir**：程序 ≈ 550MB（含 WebEngine），加模型后精简版 ≈ 1.6GB / 完整版 ≈ 2.4GB；Inno Setup 安装器，模型为可选组件。
+- PyInstaller **onedir**：程序 ≈ 400MB（Python + FastAPI/uvicorn/pywebview，远轻于 Qt），`web/dist/` 作为数据文件随包并由本地服务托管；加模型后精简版 ≈ 1.4GB / 完整版 ≈ 2.2GB；Inno Setup 安装器，模型为可选组件。
 - llama-cpp-python 预编译 CPU wheel（通用优先），GPU 版作可选变体运行时探测。
 - 首启自检：模型完整性、AVX2、DB 初始化、WebEngine 可用性。
 
@@ -359,14 +373,14 @@ AI_Story_Simulator/
 
 | 阶段 | 内容 | 产出验收 |
 |---|---|---|
-| **0. 骨架** | 工程、DB 迁移、LocalBackend 跑通、**PyInstaller+WebEngine 冒烟** | CLI 叙事→裁决闭环；打包坑前置验证 |
-| **1. 直通模式** | 剧本包加载、WebEngine 游戏视图（叙事流+实体链接+基础面板+触发词）、对话级存档 | 《凡人修仙传》包开局到首个爽点，面板可点、实体名可查 |
+| **0. 骨架** | 工程、DB 迁移、AI 后端抽象、CLI 直通闭环 | ✅ 已完成：剧本包解析/DAO/本地+在线+演练后端/触发词/存档，测试全绿 |
+| **1. 直通模式** | FastAPI 本地服务 + React/AntD 前端（剧本架/叙事流/触发词 chips/流式渲染/对话级存档）+ pywebview 桌面壳 | 《凡人修仙传》包开局到首个爽点；`story-sim play` 打开即成品窗口 |
 | **2. 引擎模式** | 结构化解析、TurnPayload 全量渲染（选项卡/Inspector/动效）、数值/锚点/结算、角色创建向导 | 数值/面板/存档/防刷子全由代码保证 |
 | **3. 小说拆解** | 分层拆解 + Pack Spec 校验器 + G1~G3 质量门 + 复核界面 + 黄金回归 | 从一部小说前 20 章生成 A/B 级剧本包并通关一局 |
 | **4. 在线与分发** | RemoteBackend、设置页、安装器 | 干净 Windows 机器安装即玩，断网可用 |
 
 风险与对策：
-- **WebEngine 打包体积/兼容** → 阶段 0 冒烟覆盖；最坏回退 QTextBrowser 渲染（契约层隔离，UI 双实现可切换）。
+- **WebView2 缺失（老旧 Win10）** → 安装器捆绑 WebView2 引导程序；运行时回退打开系统浏览器（功能不缺失，仅少窗口壳）。
 - **小模型叙事力不足** → 引擎模式压缩上下文 + 4B 档 + 在线优先；阶段 1 直通模式尽早暴露上限。
 - **小模型 JSON 不稳** → GBNF + 修复重试 + 章节级降级。
 - **剧本包格式漂移** → 解析器宽容 + 未知章节降级纯文本 + 直通模式兜底。

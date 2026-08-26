@@ -1,9 +1,16 @@
-"""CLI 入口：migrate / packs / demo（阶段 0 验收闭环）。"""
+"""CLI 入口：migrate / packs / demo / serve / play。
+
+- serve：启动本地服务（开发用，--dev 固定 token 方便 Vite 代理）
+- play：启动服务并打开桌面窗口（pywebview，缺失时回退系统浏览器）
+"""
 
 from __future__ import annotations
 
 import argparse
+import secrets
 import sys
+import threading
+import webbrowser
 
 from . import config
 from .ai import resolve_backend
@@ -26,7 +33,7 @@ def _stdout_utf8() -> None:
 def _open_db() -> Database:
     config.ensure_runtime_dirs()
     db = Database(config.DB_PATH)
-    version = migrate(db)
+    migrate(db)
     return db
 
 
@@ -72,9 +79,6 @@ def cmd_packs(args) -> int:
 def cmd_demo(args) -> int:
     db = _open_db()
     try:
-        if args.allow_private_api:
-            dao.settings.set_setting(db, "api_allow_private", "1")
-
         packs = load_packs(config.SCRIPT_DIR)
         if not packs:
             print(f"未找到剧本包（{config.SCRIPT_DIR}）")
@@ -126,13 +130,65 @@ def cmd_demo(args) -> int:
         db.close()
 
 
+# ---- 本地服务 / 桌面窗口 ------------------------------------------------------
+
+
+def _make_server(host: str, port: int, token: str, dry_run: bool):
+    import uvicorn
+    from .server import create_app
+
+    app = create_app(token=token, dry_run=dry_run)
+    config_ = uvicorn.Config(app, host=host, port=port, log_level="warning")
+    return uvicorn.Server(config_)
+
+
+def cmd_serve(args) -> int:
+    _stdout_utf8()
+    token = "dev" if args.dev else secrets.token_urlsafe(24)
+    server = _make_server(args.host, args.port, token, args.dry_run)
+    url = f"http://{args.host}:{args.port}/?token={token}"
+    print(f"本地服务：{url}")
+    print("  前端：发布模式自动托管 web/dist/；开发模式另开终端执行 cd web && npm run dev")
+    if not args.no_browser:
+        threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+    server.run()
+    return 0
+
+
+def cmd_play(args) -> int:
+    _stdout_utf8()
+    token = secrets.token_urlsafe(24)
+    server = _make_server("127.0.0.1", args.port, token, args.dry_run)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    url = f"http://127.0.0.1:{args.port}/?token={token}"
+
+    if not config.WEB_DIST_DIR.is_dir():
+        print("前端未构建（web/dist/ 不存在）：请先 cd web && npm install && npm run build，"
+              "或开发模式使用 serve --dev + npm run dev")
+
+    try:
+        import webview  # pywebview，见 pyproject [desktop] extra
+
+        webview.create_window(config.APP_NAME, url, width=1280, height=820, min_size=(960, 640))
+        webview.start()
+        server.should_exit = True
+        return 0
+    except ImportError:
+        print("未安装 pywebview（pip install pywebview），回退系统浏览器")
+        webbrowser.open(url)
+        while thread.is_alive():
+            thread.join(3600)
+        return 0
+
+
 # ---- 入口 -------------------------------------------------------------------
 
 
 def main(argv: list[str] | None = None) -> int:
     _stdout_utf8()
     parser = argparse.ArgumentParser(
-        prog="story-sim", description="AI 剧情模拟器（阶段 0：直通模式 CLI）"
+        prog="story-sim", description="AI 剧情模拟器"
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -144,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
     p_show = p_packs_sub.add_parser("show", help="查看章节切分")
     p_show.add_argument("name", help="剧本包名称（子串匹配）")
 
-    p_demo = sub.add_parser("demo", help="直通模式开局")
+    p_demo = sub.add_parser("demo", help="直通模式开局（CLI）")
     p_demo.add_argument("--pack", default="", help="剧本包名称（子串匹配，默认第一个）")
     p_demo.add_argument("--dry-run", action="store_true", help="演练后端（无需模型）")
     p_demo.add_argument("--api-base", help="OpenAI 兼容 API 地址（如 https://api.xx.com/v1）")
@@ -152,6 +208,17 @@ def main(argv: list[str] | None = None) -> int:
     p_demo.add_argument("--api-model", help="模型名")
     p_demo.add_argument("--allow-private-api", action="store_true",
                         help="允许内网/本机 API 端点（Ollama/LM Studio）")
+
+    for name, help_text, window in (("serve", "启动本地服务（开发）", False),
+                                    ("play", "启动桌面窗口（成品形态）", True)):
+        p = sub.add_parser(name, help=help_text)
+        p.add_argument("--port", type=int, default=8765)
+        p.add_argument("--dry-run", action="store_true", help="演练后端（无需模型）")
+        if not window:
+            p.add_argument("--host", default="127.0.0.1")
+            p.add_argument("--dev", action="store_true",
+                           help="开发模式：固定 token=dev，供 Vite 代理使用")
+            p.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
 
     args = parser.parse_args(argv)
 
@@ -162,6 +229,10 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_packs(args)
     if args.command == "demo":
         return cmd_demo(args)
+    if args.command == "serve":
+        return cmd_serve(args)
+    if args.command == "play":
+        return cmd_play(args)
     return 1
 
 

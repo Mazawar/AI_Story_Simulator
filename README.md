@@ -6,65 +6,75 @@
 
 ## 当前状态
 
-**阶段 0 · 骨架**（见 DESIGN.md §13 路线图）：
+**阶段 1 · 直通模式界面化**（见 DESIGN.md §13 路线图）：
 
 - [x] 工程结构 + CLI 入口
-- [x] SQLite 数据层（全量参数绑定，含防拼接守卫）+ v1 迁移（18 张表）
+- [x] SQLite 数据层（全量参数绑定，含跨线程串行化）+ v1 迁移（18 张表）
 - [x] 剧本包加载器：编码检测 + 九章节切分（对 `script/` 三个剧本包实测通过）
-- [x] AI 后端抽象：本地 llama.cpp / 在线 OpenAI 兼容 / 演练用 Canned，统一接口 + 路由
-- [x] 直通模式闭环：加载剧本包 → 对话回合 → 触发词拦截（「存档」等）→ 回合与存档落库
-- [ ] WebEngine 交互游戏视图（阶段 1）
-- [ ] 引擎模式：数值/面板/锚点/角色创建向导（阶段 2）
+- [x] AI 后端抽象：本地 llama.cpp / 在线 OpenAI 兼容（含 SSRF 防护）/ 演练 Canned，统一接口 + 路由
+- [x] **FastAPI 本地服务**：REST + SSE（token 鉴权、事件总线、流式推送、静态托管）
+- [x] **React + Vite + Ant Design 前端**：剧本架、游戏视图（叙事块渲染：旁白/对话/播报条/选项卡）、触发词 chips、SSE 流式输出
+- [x] 叙事解析器：LLM 文本 → 渲染块（`> **X：**`对话 / `【…｜…】`播报条 / `【A】`选项）
+- [x] 桌面壳：`story-sim play`（pywebview WebView2，缺失回退浏览器）
+- [ ] 角色创建向导 / 实体链接 Inspector 卡（阶段 1 余项）
+- [ ] 引擎模式：数值/面板/锚点/章节结算（阶段 2）
 - [ ] 小说拆解 + 质量门（阶段 3）
 - [ ] PyInstaller 打包 + 安装器（阶段 4）
 
 ## 快速开始
 
 ```bash
-# 1. 安装（骨架零依赖；要跑本地模型装 local 扩展）
-pip install -e .
-pip install -e ".[local]"        # 本地推理（llama-cpp-python）
+# 1. 安装（骨架零依赖；按需装 extras）
+pip install -e ".[server]"        # FastAPI 本地服务（界面所需）
+pip install -e ".[local]"         # 本地推理（llama-cpp-python）
+pip install -e ".[desktop]"       # 桌面窗口壳（pywebview）
+pip install -e ".[dev]"           # 测试
 
 # 2. 下载 GGUF 模型放入 models/（详见 models/README.md）
 #    推荐 Qwen3-1.7B-Instruct Q4_K_M（主力）、Qwen3-0.6B（快速档）
 
-# 3. 初始化数据库
+# 3. 构建前端（首次）
+cd web && npm install && npm run build && cd ..
+
+# 4. 初始化数据库
 story-sim migrate
 
-# 4. 查看剧本包
+# 5. 开玩（成品形态：打开即是窗口）
+story-sim play                     # 无模型时加 --dry-run 演练
+#    或浏览器形态：story-sim serve --dev --dry-run
+
+# ---- 前端开发模式（热更新）----
+# 终端1: story-sim serve --dev --dry-run
+# 终端2: cd web && npm run dev     # Vite 5173，/api 自动代理到 8765
+
+# ---- CLI 直通模式（无界面调试）----
 story-sim packs list
-story-sim packs show 凡人
+story-sim demo --pack 凡人 --dry-run
 
-# 5. 开玩（直通模式，本地模型）
-story-sim demo --pack 凡人
-
-# 无模型时的流水线演练（Canned 后端，验证管线不通模型也能跑通）
-story-sim demo --pack 剑来 --dry-run
-
-# 在线 API（任意 OpenAI 兼容接口）
-story-sim demo --pack 完美 --api-base https://api.example.com/v1 --api-key sk-xxx --model some-model
+# ---- 在线 API（任意 OpenAI 兼容接口）----
+story-sim play --api-base https://api.example.com/v1 --api-key sk-xxx --api-model some-model
 ```
 
-游戏内触发词（直通模式已拦截）：`存档`、`读取存档`、`修士`、`任务`、`提示`、`降级面板`、`恢复面板`、`本章结束`；退出输入 `quit`。
+游戏内触发词：`存档`、`读取存档`、`修士`、`任务`、`提示`、`本章结束`（游戏视图有快捷 chips）；CLI 退出输入 `quit`。
 
 ## 目录结构
 
 ```
 app/
-├─ main.py        # CLI 入口：migrate / packs / demo
+├─ main.py        # CLI 入口：migrate / packs / demo / serve / play
 ├─ config.py      # 路径与常量
 ├─ core/          # 游戏引擎：回合循环、状态、触发词、存档
-├─ render/        # 渲染契约（TurnPayload）：结构化回合数据，阶段1起供 WebEngine 消费
+├─ render/        # 渲染契约：TurnPayload + 叙事解析器（LLM 文本→渲染块）
 ├─ pack/          # 剧本包加载：编码检测、章节切分
 ├─ ai/            # LLMBackend 抽象：local(llama.cpp) / remote(OpenAI兼容) / canned + 路由
+├─ server/        # FastAPI 本地服务：token 鉴权、REST+SSE 路由、会话事件总线、静态托管
 ├─ ingest/        # 小说拆解流水线（阶段3）
-├─ db/            # SQLite：连接封装（强制参数绑定）、迁移、DAO
-└─ ui/            # 桌面界面（阶段1：Widgets 外壳 + WebEngine 游戏视图）
-assets/web/       # 游戏视图前端资源（阶段1）
+└─ db/            # SQLite：连接（跨线程串行化）、迁移、DAO（内联字面量 SQL）
+web/              # React + Vite + AntD 前端（构建产物 web/dist/ 随包分发）
 models/           # GGUF/ONNX 模型文件（不入库）
 data/             # story_simulator.db（运行时生成，不入库）
 script/           # 剧本包素材
-tests/            # 单元测试（stdlib unittest，零依赖可跑）
+tests/            # 单元测试（31 项，stdlib unittest 零依赖可跑）
 ```
 
 ## 设计要点

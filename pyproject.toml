@@ -14,9 +14,10 @@ dependencies = []
 
 [project.optional-dependencies]
 local = ["llama-cpp-python>=0.3"]          # 本地 GGUF 推理
-ui = ["PySide6>=6.6", "PySide6-Addons>=6.6"]  # Widgets 外壳 + WebEngine 游戏视图
+server = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]  # 本地服务（前端接口）
+desktop = ["pywebview>=5"]                 # 桌面窗口壳（WebView2）
 embed = ["fastembed>=0.3"]                 # 嵌入/检索（小说投喂用）
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "httpx>=0.27"]         # 测试（含 FastAPI TestClient）
 
 [project.scripts]
 story-sim = "app.main:main"

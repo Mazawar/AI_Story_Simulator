@@ -8,11 +8,12 @@ from ..database import Database
 
 
 def create_playthrough(db: Database, story_id: int, mode: str, player_json: dict | None = None) -> int:
-    cur = db.conn.execute(
-        "INSERT INTO playthroughs (story_id, mode, player_json) VALUES (?, ?, ?)",
-        (story_id, mode, json.dumps(player_json, ensure_ascii=False) if player_json else None),
-    )
-    db.conn.commit()
+    with db.locked() as conn:
+        cur = conn.execute(
+            "INSERT INTO playthroughs (story_id, mode, player_json) VALUES (?, ?, ?)",
+            (story_id, mode, json.dumps(player_json, ensure_ascii=False) if player_json else None),
+        )
+        conn.commit()
     return int(cur.lastrowid)
 
 
@@ -57,8 +58,9 @@ def write_save(db: Database, playthrough_id: int, slot: str, summary: str, snaps
 
 
 def load_save(db: Database, playthrough_id: int, slot: str) -> dict | None:
-    row = db.conn.execute(
-        "SELECT snapshot_json FROM saves WHERE playthrough_id = ? AND slot = ?",
-        (playthrough_id, slot),
-    ).fetchone()
+    with db.locked() as conn:
+        row = conn.execute(
+            "SELECT snapshot_json FROM saves WHERE playthrough_id = ? AND slot = ?",
+            (playthrough_id, slot),
+        ).fetchone()
     return json.loads(row["snapshot_json"]) if row is not None else None
