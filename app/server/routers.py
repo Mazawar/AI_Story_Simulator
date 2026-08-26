@@ -11,12 +11,38 @@ from pydantic import BaseModel
 
 from .. import config
 from ..ai import resolve_backend
+from ..ai.backend import LLMBackend
+from ..ai.local import find_model_file, pick_context_window
 from ..core.engine import DirectEngine
 from ..db import dao
 from ..pack import load_packs
 from .sessions import REGISTRY, PlaySession
 
 router = APIRouter()
+
+# 后端缓存：按上下文档位分开（剧本包提示词处理只付一次，KV 缓存跨对局复用）；
+# canned（缺模型回落）不缓存，便于用户放入模型后生效
+_BACKEND_CACHE: dict[int, LLMBackend] = {}
+
+
+def _shared_backend(db, dry_run: bool, n_ctx: int) -> LLMBackend:
+    if dry_run:
+        from ..ai.backend import CannedBackend
+        return CannedBackend()
+    cached = _BACKEND_CACHE.get(n_ctx)
+    if cached is not None:
+        return cached
+    from ..ai.local import LocalBackend
+
+    model_file = find_model_file(config.MODELS_DIR)
+    if model_file is not None:
+        try:
+            backend = LocalBackend(model_file, n_ctx=n_ctx)
+            _BACKEND_CACHE[n_ctx] = backend
+            return backend
+        except RuntimeError as e:
+            print(f"[router] 本地后端不可用：{e}")
+    return resolve_backend(db)
 
 
 def _db(request: Request):
@@ -71,11 +97,12 @@ def create_play(request: Request, body: PlayRequest):
     story_id = dao.packs.get_story_for_pack(db, pack_id, pack.title)
     playthrough_id = dao.plays.create_playthrough(db, story_id, mode="direct")
 
-    engine = DirectEngine(db, resolve_backend(db, dry_run=request.app.state.dry_run),
-                          pack, playthrough_id)
+    n_ctx = pick_context_window(len(pack.system_prompt()))
+    engine = DirectEngine(db, _shared_backend(db, request.app.state.dry_run, n_ctx),
+                          pack, playthrough_id, n_ctx=n_ctx)
     REGISTRY.put(playthrough_id, PlaySession(engine))
     return {"playthrough_id": playthrough_id, "pack_title": pack.title,
-            "backend": engine.backend.name}
+            "backend": engine.backend.name, "n_ctx": n_ctx}
 
 
 def _session_or_404(playthrough_id: int) -> PlaySession:

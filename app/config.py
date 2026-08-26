@@ -1,15 +1,39 @@
-"""路径与全局常量。所有模块经由这里取路径，禁止自行拼相对路径。"""
+"""路径与全局常量。所有模块经由这里取路径，禁止自行拼相对路径。
 
+打包（PyInstaller onedir）后的目录约定：
+  AIStorySimulator/
+  ├─ AIStorySimulator.exe
+  ├─ models/    script/    data/          ← 用户可见可替换（紧邻 exe）
+  └─ _internal/  （代码 + web/dist 静态前端）
+查找顺序：exe 目录 → _internal，兼顾两种放置方式。
+"""
+
+from __future__ import annotations
+
+import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+FROZEN = bool(getattr(sys, "frozen", False))
+
+if FROZEN:
+    ROOT = Path(sys.executable).resolve().parent
+else:
+    ROOT = Path(__file__).resolve().parent.parent
+
+
+def _first_existing(*candidates: Path) -> Path:
+    for c in candidates:
+        if c.is_dir():
+            return c
+    return candidates[0]
+
 
 DATA_DIR = ROOT / "data"
 DB_PATH = DATA_DIR / "story_simulator.db"
-MODELS_DIR = ROOT / "models"
-SCRIPT_DIR = ROOT / "script"          # 剧本包素材（系统提示词文档，非小说）
-WEB_DIR = ROOT / "web"                # React 前端源码
-WEB_DIST_DIR = WEB_DIR / "dist"       # 前端构建产物（发布模式由 FastAPI 托管）
+MODELS_DIR = _first_existing(ROOT / "models", ROOT / "_internal" / "models")
+SCRIPT_DIR = _first_existing(ROOT / "script", ROOT / "_internal" / "script")
+WEB_DIR = ROOT / "web"                # React 前端源码（仅开发环境存在）
+WEB_DIST_DIR = _first_existing(ROOT / "web" / "dist", ROOT / "_internal" / "web" / "dist")
 
 APP_NAME = "AI Story Simulator"
 APP_VERSION = "0.1.0"

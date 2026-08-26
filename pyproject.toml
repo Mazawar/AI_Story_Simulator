@@ -4,23 +4,33 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-story-simulator"
-version = "0.1.0"
+version = "0.2.0"
 description = "单机 AI 剧情模拟游戏：内置本地小模型 + 剧本包 + 交互面板 + 小说拆解"
 readme = "README.md"
 requires-python = ">=3.11"
 
-# 骨架阶段零第三方依赖；各能力按需安装对应 extras（见 README）
-dependencies = []
+# 运行时核心依赖（uv sync 自动安装）
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+]
 
 [project.optional-dependencies]
 local = ["llama-cpp-python>=0.3"]          # 本地 GGUF 推理
-server = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]  # 本地服务（前端接口）
 desktop = ["pywebview>=5"]                 # 桌面窗口壳（WebView2）
-embed = ["fastembed>=0.3"]                 # 嵌入/检索（小说投喂用）
-dev = ["pytest>=8", "httpx>=0.27"]         # 测试（含 FastAPI TestClient）
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",                         # FastAPI TestClient
+    "pyinstaller>=6",                      # EXE 打包
+]
+embed = ["fastembed>=0.3"]                 # 嵌入/检索（小说投喂用，阶段3）
 
 [project.scripts]
 story-sim = "app.main:main"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.uv]
+# 打包/开发环境一律装齐（本地图形界面即核心形态）
+default-groups = "all"

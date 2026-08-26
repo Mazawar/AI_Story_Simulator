@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Input, Button, Space, Tag, Typography, message } from 'antd'
+import { Input, Button, Tag, Typography, message } from 'antd'
 import { SendOutlined, HomeOutlined } from '@ant-design/icons'
 import { api, sseUrl } from '../api.js'
 import { BlockView, StreamView } from '../components/blocks.jsx'
@@ -13,6 +13,13 @@ function packParam() {
   return q.get('pack') || ''
 }
 
+const WAITING_HINTS = [
+  '命运正在推演……',
+  '世界正在苏醒……',
+  '因果正在交织……',
+  '群山的影子落下来了……',
+]
+
 export default function Game() {
   const packTitle = useMemo(packParam, [])
   const [pid, setPid] = useState(null)
@@ -21,14 +28,21 @@ export default function Game() {
   const [busy, setBusy] = useState(false)
   const [input, setInput] = useState('')
   const [error, setError] = useState('')
+  const [elapsed, setElapsed] = useState(0)
   const endRef = useRef(null)
+  const openedRef = useRef(false)               // 开场只发一次（StrictMode 双挂载防护）
+  const pidRef = useRef(null)                   // onopen 回调里读，避免闭包拿到旧 state
 
   const send = async (text) => {
-    if (!text.trim() || !pid || busy) return
-    setBlocks((b) => [...b, { type: 'note', text: '你> ' + text }])
+    const target = pidRef.current
+    if (!text.trim() || !target || busy) return
+    if (text !== '开始') {
+      setBlocks((b) => [...b, { type: 'note', text: '你 › ' + text }])
+    }
     setBusy(true)
+    setElapsed(0)
     try {
-      await api(`/api/play/${pid}/input`, {
+      await api(`/api/play/${target}/input`, {
         method: 'POST',
         body: JSON.stringify({ text }),
       })
@@ -46,10 +60,16 @@ export default function Game() {
           method: 'POST',
           body: JSON.stringify({ pack_title: packTitle }),
         })
+        pidRef.current = r.playthrough_id
         setPid(r.playthrough_id)
-        message.success(`对局已创建（${r.pack_title} · ${r.backend} 后端）`)
 
         es = new EventSource(sseUrl(`/api/play/${r.playthrough_id}/events`))
+        es.onopen = () => {
+          if (!openedRef.current) {
+            openedRef.current = true
+            send('开始')                       // 自动触发剧本包「首轮输出」
+          }
+        }
         es.onmessage = (e) => {
           const ev = JSON.parse(e.data)
           if (ev.type === 'delta') {
@@ -68,7 +88,7 @@ export default function Game() {
             setBusy(false)
           }
         }
-        es.onerror = () => { /* 断线由 history 兜底，不弹错误 */ }
+        es.onerror = () => { /* 断线由 history 兜底 */ }
       } catch (e) {
         setError(String(e.message || e))
       }
@@ -76,51 +96,80 @@ export default function Game() {
     return () => { if (es) es.close() }
   }, [])
 
+  // 生成中：计时 + 提示轮换
+  useEffect(() => {
+    if (!busy) return
+    const t = setInterval(() => setElapsed((s) => s + 1), 1000)
+    return () => clearInterval(t)
+  }, [busy])
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [blocks, stream])
 
+  const hint = WAITING_HINTS[Math.min(Math.floor(elapsed / 8), WAITING_HINTS.length - 1)]
+
   if (error) {
     return (
       <div className="game-error">
+        <div className="game-error-mark">✕</div>
         <p>创建对局失败：{error}</p>
         <Button onClick={() => { location.hash = '#/' }}>返回剧本架</Button>
       </div>
     )
   }
 
+  const empty = blocks.length === 0 && !stream
+
   return (
     <div className="game">
       <header className="game-header">
-        <Button icon={<HomeOutlined />} size="small" onClick={() => { location.hash = '#/' }} />
-        <Text strong>{packTitle}</Text>
-        <Tag>{pid ? `对局 #${pid}` : '创建中…'}</Tag>
-        {busy && <Tag color="processing">生成中</Tag>}
+        <button className="icon-btn" onClick={() => { location.hash = '#/' }} title="返回剧本架">
+          <HomeOutlined />
+        </button>
+        <div className="game-title">
+          <span className="game-title-main">{packTitle}</span>
+          <span className="game-title-sub">命运模拟 · 进行中</span>
+        </div>
+        {pid && <Tag className="tag-ink">对局 #{pid}</Tag>}
+        {busy
+          ? <Tag className="tag-live" color="processing">推演 {elapsed}s</Tag>
+          : <Tag className="tag-ink">静候行动</Tag>}
       </header>
 
       <main className="game-narrative">
+        {empty && busy && (
+          <div className="opening-wait">
+            <div className="opening-seal">命</div>
+            <p className="opening-hint">{hint}</p>
+            <p className="opening-sub">
+              本地模型首次推演需加载整卷剧本（约一至两分钟），后续回合会快得多
+            </p>
+          </div>
+        )}
         {blocks.map((b, i) => (
           <BlockView key={i} block={b}
                      onChoice={busy ? null : (opt) => send(opt.text)} />
         ))}
         <StreamView text={stream} />
-        {busy && !stream && <div className="streaming waiting">……</div>}
+        {busy && !stream && !empty && (
+          <div className="streaming waiting">{hint}<span className="stream-caret" /></div>
+        )}
         <div ref={endRef} />
       </main>
 
       <footer className="game-input">
-        <Space wrap style={{ marginBottom: 8 }}>
+        <div className="trigger-row">
           {TRIGGERS.map((t) => (
-            <Button key={t} size="small" disabled={!pid || busy} onClick={() => send(t)}>
-              {t}
-            </Button>
+            <button key={t} className="trigger-chip" disabled={!pid || busy}
+                    onClick={() => send(t)}>{t}</button>
           ))}
-        </Space>
+        </div>
         <div className="input-row">
           <Input.TextArea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="输入你的行动，或点击上方触发词 / 选项"
+            placeholder="写下你的行动……（Enter 发送，Shift+Enter 换行）"
             autoSize={{ minRows: 1, maxRows: 4 }}
             onPressEnter={(e) => {
               if (!e.shiftKey) {
@@ -130,6 +179,7 @@ export default function Game() {
               }
             }}
             disabled={!pid || busy}
+            variant="filled"
           />
           <Button type="primary" icon={<SendOutlined />} disabled={!pid || busy}
                   onClick={() => { send(input); setInput('') }}>

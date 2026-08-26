@@ -156,30 +156,38 @@ def cmd_serve(args) -> int:
 
 
 def cmd_play(args) -> int:
-    _stdout_utf8()
-    token = secrets.token_urlsafe(24)
-    server = _make_server("127.0.0.1", args.port, token, args.dry_run)
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    url = f"http://127.0.0.1:{args.port}/?token={token}"
+    from .launcher import launch
 
-    if not config.WEB_DIST_DIR.is_dir():
-        print("前端未构建（web/dist/ 不存在）：请先 cd web && npm install && npm run build，"
-              "或开发模式使用 serve --dev + npm run dev")
+    return launch(dry_run=args.dry_run)
 
+
+def cmd_models(args) -> int:
+    from .ai import downloader
+
+    if args.action == "list":
+        entries = downloader.scan(config.MODELS_DIR)
+        if not entries:
+            print(f"models/ 目录为空（{config.MODELS_DIR}）")
+            print("下载主力模型：story-sim models fetch qwen3-1.7b")
+            return 0
+        for e in entries:
+            size_mb = e["size"] / 1024 / 1024
+            role = "★ 主力档" if e["rank"] < 3 else ("快速档" if e["rank"] < 6 else "增强/其他")
+            print(f"  {e['file']:<44} {size_mb:7.1f} MB  {role}")
+        return 0
+
+    if args.action == "presets":
+        for key, p in downloader.PRESETS.items():
+            print(f"  {key:<12} {p['desc']}")
+        return 0
+
+    # fetch
     try:
-        import webview  # pywebview，见 pyproject [desktop] extra
-
-        webview.create_window(config.APP_NAME, url, width=1280, height=820, min_size=(960, 640))
-        webview.start()
-        server.should_exit = True
+        downloader.fetch(args.source, config.MODELS_DIR, name=args.name)
         return 0
-    except ImportError:
-        print("未安装 pywebview（pip install pywebview），回退系统浏览器")
-        webbrowser.open(url)
-        while thread.is_alive():
-            thread.join(3600)
-        return 0
+    except (ValueError, RuntimeError) as e:
+        print(f"下载失败：{e}")
+        return 1
 
 
 # ---- 入口 -------------------------------------------------------------------
@@ -209,16 +217,25 @@ def main(argv: list[str] | None = None) -> int:
     p_demo.add_argument("--allow-private-api", action="store_true",
                         help="允许内网/本机 API 端点（Ollama/LM Studio）")
 
-    for name, help_text, window in (("serve", "启动本地服务（开发）", False),
-                                    ("play", "启动桌面窗口（成品形态）", True)):
-        p = sub.add_parser(name, help=help_text)
+    p_play = sub.add_parser("play", help="启动桌面窗口（成品形态）")
+    p_play.add_argument("--dry-run", action="store_true", help="演练后端（无需模型）")
+
+    p_models = sub.add_parser("models", help="本地模型管理")
+    p_models_sub = p_models.add_subparsers(dest="action", required=True)
+    p_models_sub.add_parser("list", help="扫描 models/ 显示可用模型")
+    p_models_sub.add_parser("presets", help="列出预置模型源")
+    p_fetch = p_models_sub.add_parser("fetch", help="下载模型")
+    p_fetch.add_argument("source", help="预置名（如 qwen3-1.7b）或 GGUF 直链 URL")
+    p_fetch.add_argument("--name", help="自定义 URL 时指定保存文件名（须 .gguf 结尾）")
+
+    for name in ("serve",):
+        p = sub.add_parser(name, help="启动本地服务（开发）")
         p.add_argument("--port", type=int, default=8765)
         p.add_argument("--dry-run", action="store_true", help="演练后端（无需模型）")
-        if not window:
-            p.add_argument("--host", default="127.0.0.1")
-            p.add_argument("--dev", action="store_true",
-                           help="开发模式：固定 token=dev，供 Vite 代理使用")
-            p.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
+        p.add_argument("--host", default="127.0.0.1")
+        p.add_argument("--dev", action="store_true",
+                       help="开发模式：固定 token=dev，供 Vite 代理使用")
+        p.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
 
     args = parser.parse_args(argv)
 
@@ -233,6 +250,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_serve(args)
     if args.command == "play":
         return cmd_play(args)
+    if args.command == "models":
+        return cmd_models(args)
     return 1
 
 

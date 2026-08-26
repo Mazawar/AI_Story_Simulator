@@ -43,11 +43,13 @@ _PANEL_NOTES = {
 
 class DirectEngine:
     def __init__(self, db: Database, backend: LLMBackend, pack: Pack,
-                 playthrough_id: int, history: list[dict] | None = None):
+                 playthrough_id: int, history: list[dict] | None = None,
+                 n_ctx: int = 32768):
         self.db = db
         self.backend = backend
         self.pack = pack
         self.playthrough_id = playthrough_id
+        self.n_ctx = n_ctx
         # 消息历史：[system] + 已发生的 [user/assistant ...]
         self.messages: list[dict] = [{"role": "system", "content": pack.system_prompt()}]
         if history:
@@ -57,6 +59,23 @@ class DirectEngine:
                 "SELECT COALESCE(MAX(idx), 0) FROM turns WHERE playthrough_id = ?",
                 (playthrough_id,),
             ).fetchone()[0])
+
+    # ---- 上下文预算 -----------------------------------------------------------
+
+    def _trim_history(self) -> None:
+        """超长会话滑窗：system + 历史超过窗口 75% 时丢弃最旧回合。
+
+        直通模式历史无上限增长，必须裁剪；裁剪会破坏 KV 前缀缓存
+        （触发一次全量重推演），因此只在逼近上限时才发生。
+        """
+        budget_chars = int(self.n_ctx * 0.75 * 1.4)
+        def total_chars() -> int:
+            return sum(len(m["content"]) for m in self.messages)
+        # 每轮丢一对 user/assistant，直到回到预算内（至少保留最近 4 条消息）
+        while (total_chars() > budget_chars and len(self.messages) > 5):
+            # messages[0] 是 system，从最旧的非 system 消息开始丢
+            self.messages.pop(1)
+            self.messages.pop(1)
 
     # ---- 回合 ---------------------------------------------------------------
 
@@ -80,6 +99,7 @@ class DirectEngine:
             return
 
         self.messages.append({"role": "user", "content": user_input})
+        self._trim_history()
         pieces: list[str] = []
         try:
             for piece in self.backend.stream(self.messages, max_tokens=1024):
