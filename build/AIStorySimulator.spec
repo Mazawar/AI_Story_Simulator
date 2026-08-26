@@ -35,6 +35,11 @@ else:
 # 保持 llama_cpp/lib 目录结构；冻结后 __file__ 指向 _internal/llama_cpp/）
 datas += collect_data_files("llama_cpp", include_py_files=False)
 
+# 窗口图标：launcher 经 config.ICON_PATH 加载（Windows 任务栏/标题栏用窗口 HICON，
+# 与 EXE 文件图标是两回事；pywebview start(icon=) 走 winforms self.Icon）
+if (REPO / "assets" / "icon.ico").is_file():
+    datas.append((str(REPO / "assets" / "icon.ico"), "assets"))
+
 a = Analysis(
     [str(REPO / "run_launcher.py")],
     pathex=[str(REPO)],

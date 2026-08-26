@@ -35,6 +35,11 @@ SCRIPT_DIR = _first_existing(ROOT / "script", ROOT / "_internal" / "script")
 WEB_DIR = ROOT / "web"                # React 前端源码（仅开发环境存在）
 WEB_DIST_DIR = _first_existing(ROOT / "web" / "dist", ROOT / "_internal" / "web" / "dist")
 
+# 窗口图标：随包分发（spec datas 把 assets/icon.ico 放进 _internal/assets/）
+ICON_PATH = ROOT / "assets" / "icon.ico"
+if not ICON_PATH.is_file():
+    ICON_PATH = ROOT / "_internal" / "assets" / "icon.ico"
+
 APP_NAME = "AI Story Simulator"
 APP_VERSION = "0.1.0"
 

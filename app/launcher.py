@@ -63,9 +63,24 @@ def _open_window(url: str) -> bool:
     try:
         import webview  # pywebview（pyproject [desktop] extra）
 
-        webview.create_window(config.APP_NAME, url, width=1280, height=820, min_size=(960, 640))
-        webview.start()
+        window = webview.create_window(
+            config.APP_NAME, url, width=1280, height=820, min_size=(960, 640),
+        )
+        # 显式传图标：任务栏/标题栏用的是窗口 Icon（与 EXE 文件图标是两回事）；
+        # 不传时 winforms 从 EXE 提取图标的回退路径有 64 位句柄截断问题
+        icon_arg = str(config.ICON_PATH) if config.ICON_PATH.is_file() else None
+        _log().info("窗口图标：%s", icon_arg or "未找到（回退默认）")
+        webview.start(icon=icon_arg)
         return True
+    except TypeError:
+        # 旧版 pywebview 无 icon 参数
+        try:
+            webview.start()
+            return True
+        except ImportError:
+            pass
+        except Exception as e:
+            _log().warning("pywebview 启动失败，回退浏览器窗口：%s", e)
     except ImportError:
         pass
     except Exception as e:
