@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Button, message } from 'antd'
-import { PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons'
+import { Button } from 'antd'
+import { PlayCircleOutlined, ReloadOutlined, StepForwardOutlined } from '@ant-design/icons'
 import { api } from '../api.js'
 
 const PACK_META = {
@@ -18,6 +18,7 @@ function metaOf(title) {
 
 export default function Library() {
   const [packs, setPacks] = useState(null)
+  const [plays, setPlays] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -25,8 +26,9 @@ export default function Library() {
     setLoading(true)
     setError('')
     try {
-      const data = await api('/api/packs')
-      setPacks(data.packs)
+      const [packData, playData] = await Promise.all([api('/api/packs'), api('/api/plays')])
+      setPacks(packData.packs)
+      setPlays(playData.plays || [])
     } catch (e) {
       setError(String(e.message || e))
     } finally {
@@ -38,6 +40,9 @@ export default function Library() {
 
   const enter = (title) => {
     location.hash = '#/play?pack=' + encodeURIComponent(title)
+  }
+  const resume = (title, pid) => {
+    location.hash = '#/play?pack=' + encodeURIComponent(title) + '&pid=' + pid
   }
 
   return (
@@ -61,9 +66,31 @@ export default function Library() {
         </div>
       )}
 
+      {plays.length > 0 && (
+        <section className="resume-section">
+          <h2 className="resume-title">未竟之局</h2>
+          <div className="resume-list">
+            {plays.map((p) => (
+              <button key={p.id} className="resume-card"
+                      onClick={() => resume(p.story_title, p.id)}>
+                <div className="resume-card-main">
+                  <span className="resume-card-title">{p.story_title}</span>
+                  <span className="resume-card-meta">
+                    第 {p.turn_count} 回合 · {p.updated_at}
+                    {p.save_summary ? ' · 已存档' : ''}
+                  </span>
+                </div>
+                <StepForwardOutlined className="resume-card-icon" />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       <div className="library-grid">
         {(packs || []).map((p) => {
           const m = metaOf(p.title)
+          const hasWizard = (p.creation_steps || []).length > 0
           return (
             <article key={p.title} className="pack-card" onClick={() => enter(p.title)}>
               <div className="pack-card-tone" data-tone={m.tone} />
@@ -76,7 +103,13 @@ export default function Library() {
                   <span className="dot" />
                   <span>{(p.chars / 10000).toFixed(1)} 万字</span>
                   <span className="dot" />
-                  <span>离线可玩</span>
+                  <span>{(p.characters || []).length} 位角色</span>
+                  {hasWizard && (
+                    <>
+                      <span className="dot" />
+                      <span>创建向导</span>
+                    </>
+                  )}
                 </div>
                 <Button type="primary" ghost icon={<PlayCircleOutlined />}
                         className="pack-card-btn"

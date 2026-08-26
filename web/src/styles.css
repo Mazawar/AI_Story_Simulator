@@ -310,3 +310,75 @@ body {
   background: var(--ink-2) !important; color: var(--text) !important;
   border: 1px solid var(--line); border-radius: 10px !important;
 }
+
+/* ---- 续玩入口（未竟之局） ---- */
+.resume-section { margin: -8px 0 32px; }
+.resume-title {
+  font-family: var(--serif); font-size: 15px; letter-spacing: 4px;
+  color: var(--gold); margin: 0 0 12px;
+}
+.resume-list { display: grid; gap: 10px; }
+.resume-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 13px 18px; border-radius: 12px; cursor: pointer;
+  background: linear-gradient(90deg, rgba(216, 184, 120, 0.07), rgba(216, 184, 120, 0.02));
+  border: 1px solid rgba(216, 184, 120, 0.3); color: var(--text);
+  transition: all 0.15s; text-align: left;
+}
+.resume-card:hover { border-color: var(--gold); transform: translateX(3px); }
+.resume-card-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.resume-card-title {
+  font-family: var(--serif); font-size: 15px; letter-spacing: 1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.resume-card-meta { font-size: 12px; color: var(--text-dim); }
+.resume-card-icon { color: var(--gold); font-size: 17px; flex: none; }
+
+/* ---- 角色创建向导 ---- */
+.wizard {
+  padding: 6vh 4px 0; animation: fade-in 0.5s ease;
+}
+.wizard-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 14px; }
+.wizard-title {
+  font-family: var(--serif); font-size: 24px; letter-spacing: 6px; color: var(--gold);
+}
+.wizard-sub { font-size: 12px; color: var(--text-dim); letter-spacing: 2px; }
+.wizard-steps { display: flex; gap: 8px; margin-bottom: 22px; }
+.wizard-dot { width: 26px; height: 4px; border-radius: 2px; background: var(--ink-3); transition: all 0.3s; }
+.wizard-dot.on { background: var(--gold); box-shadow: 0 0 8px rgba(216, 184, 120, 0.5); }
+.wizard-dot.done { background: var(--gold-deep); }
+.wizard-question {
+  font-family: var(--serif); font-size: 18px; line-height: 1.8;
+  margin: 0 0 18px; color: var(--text);
+}
+.wizard-options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.wizard-back {
+  margin-top: 18px; background: none; border: none; cursor: pointer;
+  color: var(--text-dim); font-size: 13px; letter-spacing: 1px;
+}
+.wizard-back:hover { color: var(--gold); }
+
+/* ---- 实体链接 Inspector ---- */
+.entity-link {
+  color: var(--jade); cursor: pointer; border-bottom: 1px dashed rgba(143, 206, 136, 0.45);
+  transition: all 0.12s;
+}
+.entity-link:hover {
+  color: #b1e6aa; background: rgba(143, 206, 136, 0.1);
+  border-bottom-style: solid; border-radius: 3px;
+}
+.entity-pop .ant-popover-inner {
+  background: var(--ink-2); border: 1px solid var(--line); border-radius: 12px;
+  padding: 4px;
+}
+.entity-pop .ant-popover-title { color: var(--text); }
+.entity-card { max-width: 300px; padding: 8px 6px; }
+.entity-card-name {
+  font-family: var(--serif); font-size: 16px; color: var(--gold);
+  letter-spacing: 2px; margin-bottom: 6px;
+}
+.entity-card-desc { font-size: 13px; line-height: 1.8; color: var(--text); }
+
+@media (max-width: 640px) {
+  .wizard-options, .choices-grid { grid-template-columns: 1fr; }
+}

@@ -41,6 +41,27 @@ _PANEL_NOTES = {
 }
 
 
+def rebuild_history(payload: dict) -> str:
+    """从 TurnPayload 近似重建 assistant 原文（无存档快照时的续玩回退）。"""
+    parts: list[str] = []
+    for block in payload.get("narrative", []):
+        kind = block.get("type")
+        if kind == "narration":
+            parts.append(block.get("text", ""))
+        elif kind == "dialogue":
+            parts.append("> **%s：** %s" % (block.get("speaker", "?"), block.get("text", "")))
+        elif kind == "broadcast":
+            fields = "｜".join(
+                "%s %s" % (f.get("label", ""), f.get("value", ""))
+                for f in block.get("fields", [])
+            )
+            parts.append("【%s】" % fields)
+        elif kind == "choices":
+            parts.extend("【%s】%s" % (o.get("id", "?"), o.get("text", ""))
+                         for o in block.get("options", []))
+    return "\n".join(p for p in parts if p)
+
+
 class DirectEngine:
     def __init__(self, db: Database, backend: LLMBackend, pack: Pack,
                  playthrough_id: int, history: list[dict] | None = None,

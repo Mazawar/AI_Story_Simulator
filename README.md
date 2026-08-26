@@ -15,7 +15,8 @@
 - [x] **四五万字剧本包支持**：按剧本体量自动选上下文档位（32k 原生 → 64k/96k/128k YaRN 扩展），超长会话自动滑窗
 - [x] EXE 打包（PyInstaller onedir）：`dist/AIStorySimulator/AIStorySimulator.exe` 双击即玩
 - [x] 模型下载：`story-sim models fetch qwen3-1.7b`（HF + 国内镜像双源，断点续传）
-- [ ] 角色创建向导 / 实体链接 Inspector 卡（阶段 1 余项）
+- [x] 角色创建向导（剧本包首轮分步选择 → 原生 UI）/ 实体链接 Inspector 卡（角色名可点击）
+- [x] 续玩入口：剧本架「未竟之局」卡片，存档快照恢复（无存档时从回合历史重建）
 - [ ] 引擎模式：数值/面板/锚点/章节结算（阶段 2）
 - [ ] 小说拆解 + 质量门（阶段 3）
 
@@ -52,7 +53,7 @@ uv run story-sim migrate
 uv run story-sim packs list                    # 剧本包切分检查
 uv run story-sim demo --pack 凡人              # CLI 直通模式
 uv run story-sim serve --dev --dry-run         # 本地服务（固定 token=dev）
-uv run python -m unittest discover -s tests    # 测试（46 项）
+uv run python -m unittest discover -s tests    # 测试（52 项）
 
 # 前端开发（热更新；另开终端跑 serve --dev）
 cd web && npm install && npm run dev           # Vite 5173，/api 代理到 8765
@@ -86,7 +87,7 @@ build/            # PyInstaller spec + make_exe.py 一键打包
 models/           # GGUF 模型（gitignore，用 models fetch 下载）
 data/             # story_simulator.db（运行时生成）
 script/           # 剧本包素材（系统提示词文档，非小说）
-tests/            # 单元测试（46 项）
+tests/            # 单元测试（52 项）
 dist/             # 本地构建输出（正式产物在仓库外 AIStorySimulator-release/）
 ```
 

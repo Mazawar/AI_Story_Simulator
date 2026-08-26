@@ -83,6 +83,60 @@ class TestServerAPI(unittest.TestCase):
         r = self.client.post(f"/api/play/{pid}/input?token=t-test", json={"text": "  "})
         self.assertEqual(r.status_code, 400)
 
+    def _wait_turns(self, pid, minimum=1, timeout=10):
+        import time as _t
+        deadline = _t.time() + timeout
+        while _t.time() < deadline:
+            turns = self.client.get(f"/api/play/{pid}/history?token=t-test").json()["turns"]
+            if len(turns) >= minimum:
+                return turns
+            _t.sleep(0.1)
+        return []
+
+    def test_resume_flow(self):
+        # 开局 → 一回合 → 存档 → 续玩端点重建会话 → /api/plays 列表可见
+        pid = self.client.post("/api/play?token=t-test", json={"pack_title": "凡人"}).json()["playthrough_id"]
+        self.client.post(f"/api/play/{pid}/input?token=t-test", json={"text": "我是谁？"})
+        self.assertTrue(self._wait_turns(pid))
+
+        self.client.post(f"/api/play/{pid}/input?token=t-test", json={"text": "存档"})
+        import time as _t
+        deadline = _t.time() + 10
+        saves = []
+        while _t.time() < deadline:
+            saves = self.client.get(f"/api/play/{pid}/saves?token=t-test").json()["saves"]
+            if saves:
+                break
+            _t.sleep(0.1)
+        self.assertEqual(len(saves), 1)
+
+        # 续玩：应重建会话并保留回合计数
+        r = self.client.post(f"/api/play/{pid}/resume?token=t-test")
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["resumed"])
+        self.assertGreaterEqual(body["turn_count"], 2)
+        self.assertIn(body["pack_title"], "凡人修仙传：人界篇")
+
+        # 续玩后可以继续交互
+        self.client.post(f"/api/play/{pid}/input?token=t-test", json={"text": "继续"})
+        self.assertTrue(self._wait_turns(pid, minimum=3))
+
+        # 列表接口
+        plays = self.client.get("/api/plays?token=t-test").json()["plays"]
+        self.assertGreaterEqual(len(plays), 1)
+        entry = next(p for p in plays if p["id"] == pid)
+        self.assertEqual(entry["story_title"], "凡人修仙传：人界篇")
+        self.assertTrue(entry["save_summary"])
+
+    def test_packs_meta_enriched(self):
+        packs = self.client.get("/api/packs?token=t-test").json()["packs"]
+        fanren = next(p for p in packs if "凡人" in p["title"])
+        self.assertGreaterEqual(len(fanren["characters"]), 3)
+        self.assertGreaterEqual(len(fanren["creation_steps"]), 2)
+        names = [c["name"] for c in fanren["characters"]]
+        self.assertIn("韩立", names)
+
 
 if __name__ == "__main__":
     unittest.main()

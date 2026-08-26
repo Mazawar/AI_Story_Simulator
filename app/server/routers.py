@@ -13,9 +13,9 @@ from .. import config
 from ..ai import resolve_backend
 from ..ai.backend import LLMBackend
 from ..ai.local import find_model_file, pick_context_window
-from ..core.engine import DirectEngine
+from ..core.engine import DirectEngine, rebuild_history
 from ..db import dao
-from ..pack import load_packs
+from ..pack import load_packs, pack_meta
 from .sessions import REGISTRY, PlaySession
 
 router = APIRouter()
@@ -72,6 +72,7 @@ def list_packs(request: Request):
                 "sections": len(p.sections),
                 "chars": len(p.raw_text),
                 "file": p.file_path,
+                **pack_meta(p),
             }
             for p in packs
         ]
@@ -79,6 +80,21 @@ def list_packs(request: Request):
 
 
 # ---- 对局 -------------------------------------------------------------------
+
+
+@router.get("/plays")
+def list_plays(request: Request):
+    """最近的直通模式对局（续玩入口数据）。"""
+    with _db(request).locked() as conn:
+        rows = conn.execute(
+            "SELECT p.id, p.turn_count, p.updated_at, s.title AS story_title,"
+            " (SELECT summary FROM saves WHERE playthrough_id = p.id"
+            "  ORDER BY updated_at DESC LIMIT 1) AS save_summary"
+            " FROM playthroughs p JOIN storys s ON s.id = p.story_id"
+            " WHERE p.mode = 'direct' AND p.turn_count > 0"
+            " ORDER BY p.updated_at DESC LIMIT 8"
+        ).fetchall()
+    return {"plays": [dict(r) for r in rows]}
 
 
 class PlayRequest(BaseModel):
@@ -110,6 +126,66 @@ def _session_or_404(playthrough_id: int) -> PlaySession:
     if session is None:
         raise HTTPException(status_code=404, detail="对局不存在（服务重启后请重新开始）")
     return session
+
+
+@router.post("/play/{playthrough_id}/resume")
+def resume_play(request: Request, playthrough_id: int):
+    """续玩：重建引擎（优先用最新存档快照，无存档则从回合历史重建）。"""
+    db = _db(request)
+    with db.locked() as conn:
+        row = conn.execute(
+            "SELECT p.id, p.turn_count, s.title AS story_title, pk.raw_text AS pack_text,"
+            " pk.file_path AS pack_file"
+            " FROM playthroughs p"
+            " JOIN storys s ON s.id = p.story_id"
+            " LEFT JOIN packs pk ON pk.id = s.source_pack_id"
+            " WHERE p.id = ? AND p.mode = 'direct'",
+            (playthrough_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="对局不存在")
+        save_row = conn.execute(
+            "SELECT snapshot_json FROM saves WHERE playthrough_id = ?"
+            " ORDER BY updated_at DESC LIMIT 1",
+            (playthrough_id,),
+        ).fetchone()
+        if save_row is None:
+            turn_rows = conn.execute(
+                "SELECT turn_payload_json, player_input FROM turns"
+                " WHERE playthrough_id = ? ORDER BY idx",
+                (playthrough_id,),
+            ).fetchall()
+
+    # 重建剧本包：优先从 script/ 重载（文件可能已更新），回退库内原文
+    packs = load_packs(config.SCRIPT_DIR)
+    pack = next((p for p in packs if row["story_title"] in p.title), None)
+    if pack is None:
+        if not row["pack_text"]:
+            raise HTTPException(status_code=404, detail="剧本包源不可用")
+        from ..pack import split_sections
+        from ..pack.models import Pack
+        pack = Pack(title=row["story_title"], file_path=row["pack_file"] or "",
+                    raw_text=row["pack_text"],
+                    sections=split_sections(row["pack_text"]))
+
+    # 重建消息历史
+    if save_row is not None:
+        history = json.loads(save_row["snapshot_json"]).get("history", [])
+    else:
+        history = []
+        for t in turn_rows:
+            if t["player_input"]:
+                history.append({"role": "user", "content": t["player_input"]})
+            history.append({"role": "assistant",
+                            "content": rebuild_history(json.loads(t["turn_payload_json"]))})
+
+    n_ctx = pick_context_window(len(pack.system_prompt()))
+    engine = DirectEngine(db, _shared_backend(db, request.app.state.dry_run, n_ctx),
+                          pack, playthrough_id, history=history or None, n_ctx=n_ctx)
+    REGISTRY.put(playthrough_id, PlaySession(engine))
+    return {"playthrough_id": playthrough_id, "pack_title": pack.title,
+            "backend": engine.backend.name, "n_ctx": n_ctx,
+            "resumed": True, "turn_count": engine.turn_idx}
 
 
 class InputRequest(BaseModel):
