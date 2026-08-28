@@ -288,11 +288,14 @@ export default function Game() {
           />
         )}
 
-        {blocks.map((b, i) => (
-          <BlockView key={i} block={b} entities={entities}
-                     onChoice={(!busy && i === lastChoicesIdx)
-                       ? (opt) => send(opt.text) : null} />
-        ))}
+        {blocks.map((b, i) => {
+          if (b.type === 'choices' && i !== lastChoicesIdx) return null  // 历史选项不渲染
+          return (
+            <BlockView key={i} block={b} entities={entities}
+                       onChoice={(!busy && i === lastChoicesIdx)
+                         ? (opt) => send(opt.text) : null} />
+          )
+        })}
         <StreamView text={stream} />
         {busy && !stream && !empty && (
           <div className="streaming waiting">{hint}<span className="stream-caret" /></div>

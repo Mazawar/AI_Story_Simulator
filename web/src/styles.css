@@ -73,7 +73,7 @@ body {
   letter-spacing: 6px; color: var(--text);
 }
 .library-hero-sub { margin: 6px 0 0; color: var(--text-dim); letter-spacing: 1px; }
-.library-refresh { position: absolute; right: 0; top: 6px; }
+.library-tools { position: absolute; right: 0; top: 6px; display: flex; gap: 8px; }
 
 .library-error {
   padding: 14px 18px; border-radius: 12px; margin-bottom: 24px;
@@ -81,10 +81,13 @@ body {
   color: var(--danger); font-size: 14px;
 }
 
-.library-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 20px;
+.library-strip {
+  display: flex; gap: 18px; overflow-x: auto; padding: 4px 2px 14px;
+  scroll-snap-type: x mandatory; align-items: stretch;
 }
+.library-strip::-webkit-scrollbar { height: 8px; }
+.library-strip::-webkit-scrollbar-thumb { background: var(--ink-3); border-radius: 4px; }
+.library-strip .pack-card { flex: none; width: 280px; scroll-snap-align: start; }
 
 .pack-card {
   position: relative; border-radius: 16px; overflow: hidden; cursor: pointer;

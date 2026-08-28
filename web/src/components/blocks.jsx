@@ -100,7 +100,9 @@ export function BlockView({ block, onChoice, entities }) {
               disabled={onChoice == null}
             >
               <span className="choice-id">{opt.id}</span>
-              <span className="choice-text"><EntityText text={opt.text} entities={entities} /></span>
+              <span className="choice-text">
+                <EntityText text={String(opt.text).replace(/^[A-Da-d][.、:：]\s*/, '')} entities={entities} />
+              </span>
             </button>
           ))}
         </div>

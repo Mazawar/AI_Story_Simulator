@@ -55,12 +55,14 @@ export default function Library() {
             投身既定的命运，改写未定的结局——由本地小模型主持的单机人生模拟
           </p>
         </div>
-        <button className="icon-btn" onClick={() => { location.hash = '#/settings' }} title="设置">
-          <SettingOutlined />
-        </button>
-        <button className="icon-btn library-refresh" onClick={load} title="刷新">
-          <ReloadOutlined spin={loading} />
-        </button>
+        <div className="library-tools">
+          <button className="icon-btn" onClick={() => { location.hash = '#/settings' }} title="设置">
+            <SettingOutlined />
+          </button>
+          <button className="icon-btn" onClick={load} title="刷新">
+            <ReloadOutlined spin={loading} />
+          </button>
+        </div>
       </section>
 
       {error && (
@@ -93,7 +95,7 @@ export default function Library() {
         </section>
       )}
 
-      <div className="library-grid">
+      <div className="library-strip">
         {(packs || []).map((p) => {
           const m = metaOf(p.title)
           const hasWizard = (p.creation_steps || []).length > 0

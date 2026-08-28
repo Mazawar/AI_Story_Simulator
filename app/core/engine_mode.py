@@ -591,7 +591,8 @@ class EngineSession:
         for c in (data.get("choices") or []):
             if isinstance(c, str):
                 t = c.strip().lstrip("【】").strip()
-                if 2 <= len(t) <= 24:
+                t = re.sub(r"^[A-Da-d][\.、:：]\s*", "", t)   # 剥模型自带的字母前缀
+                if 2 <= len(t) <= 30:
                     model_choices.append(t)
         deduped = list(dict.fromkeys(model_choices))[:4]
         # 不足 4 个 → 状态机兜底补足（模型承诺恰好 4 个，缺了就补齐）
