@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button } from 'antd'
-import { PlayCircleOutlined, ReloadOutlined, StepForwardOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, ReloadOutlined, StepForwardOutlined, SettingOutlined } from '@ant-design/icons'
 import { api } from '../api.js'
 
 const PACK_META = {
@@ -55,6 +55,9 @@ export default function Library() {
             投身既定的命运，改写未定的结局——由本地小模型主持的单机人生模拟
           </p>
         </div>
+        <button className="icon-btn" onClick={() => { location.hash = '#/settings' }} title="设置">
+          <SettingOutlined />
+        </button>
         <button className="icon-btn library-refresh" onClick={load} title="刷新">
           <ReloadOutlined spin={loading} />
         </button>

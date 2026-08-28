@@ -12,7 +12,8 @@ from pydantic import BaseModel
 from .. import config
 from ..ai import resolve_backend
 from ..ai.backend import LLMBackend
-from ..ai.local import find_model_file, pick_context_window
+from ..ai.local import LocalBackend, pick_context_window
+from ..ai.router import resolve_model_file
 from ..core.engine import DirectEngine, rebuild_history
 from ..db import dao
 from ..pack import load_packs, pack_meta
@@ -29,16 +30,24 @@ def _shared_backend(db, dry_run: bool, n_ctx: int) -> LLMBackend:
     if dry_run:
         from ..ai.backend import CannedBackend
         return CannedBackend()
-    cached = _BACKEND_CACHE.get(n_ctx)
+    key = n_ctx
+    cached = _BACKEND_CACHE.get(key)
     if cached is not None:
         return cached
-    from ..ai.local import LocalBackend
-
-    model_file = find_model_file(config.MODELS_DIR)
+    # 在线优先设置生效时直接用远程（失败由引擎优雅降级兜底）
+    if (dao.settings.get_setting(db, "prefer_online") == "1"
+            and dao.settings.get_setting(db, "api_base_url")
+            and dao.settings.get_setting(db, "api_key")
+            and dao.settings.get_setting(db, "api_model")):
+        backend = resolve_backend(db)
+        if backend.name == "remote":
+            _BACKEND_CACHE[key] = backend
+            return backend
+    model_file = resolve_model_file(db)
     if model_file is not None:
         try:
             backend = LocalBackend(model_file, n_ctx=n_ctx)
-            _BACKEND_CACHE[n_ctx] = backend
+            _BACKEND_CACHE[key] = backend
             return backend
         except RuntimeError as e:
             print(f"[router] 本地后端不可用：{e}")
@@ -298,3 +307,75 @@ def saves(request: Request, playthrough_id: int):
             (playthrough_id,),
         ).fetchall()
     return {"saves": [dict(r) for r in rows]}
+
+
+# ---- 设置（在线 API / 模型档位） -----------------------------------------------
+
+class SettingsIn(BaseModel):
+    api_base_url: str | None = None
+    api_key: str | None = None            # 空串/缺省 = 不修改已存密钥
+    api_model: str | None = None
+    prefer_online: bool | None = None
+    api_allow_private: bool | None = None
+    model_choice: str | None = None       # local | 4b
+
+
+@router.get("/settings")
+def get_settings(request: Request):
+    db = _db(request)
+    def s(key, default=""):
+        return dao.settings.get_setting(db, key) or default
+    key = s("api_key")
+    return {
+        "api_base_url": s("api_base_url"),
+        "api_model": s("api_model"),
+        "api_key_set": bool(key),
+        "api_key_masked": (key[:4] + "****" + key[-4:]) if len(key) > 8 else ("****" if key else ""),
+        "prefer_online": s("prefer_online") == "1",
+        "api_allow_private": s("api_allow_private") == "1",
+        "model_choice": s("model_choice", "local"),
+    }
+
+
+@router.post("/settings")
+def save_settings(request: Request, body: SettingsIn):
+    db = _db(request)
+    if body.api_base_url is not None:
+        dao.settings.set_setting(db, "api_base_url", body.api_base_url.strip())
+    if body.api_key:
+        dao.settings.set_setting(db, "api_key", body.api_key.strip())
+    if body.api_model is not None:
+        dao.settings.set_setting(db, "api_model", body.api_model.strip())
+    if body.prefer_online is not None:
+        dao.settings.set_setting(db, "prefer_online", "1" if body.prefer_online else "0")
+    if body.api_allow_private is not None:
+        dao.settings.set_setting(db, "api_allow_private", "1" if body.api_allow_private else "0")
+    if body.model_choice in ("local", "4b"):
+        dao.settings.set_setting(db, "model_choice", body.model_choice)
+    # 模型档位变更后丢弃本地后端缓存，下次开局生效
+    if body.model_choice is not None:
+        _BACKEND_CACHE.clear()
+    return get_settings(request)
+
+
+@router.post("/settings/test")
+def test_settings(request: Request):
+    """用当前设置真实连通一次在线 API（1 token 心跳请求）。"""
+    import urllib.error
+
+    db = _db(request)
+    base = dao.settings.get_setting(db, "api_base_url")
+    key = dao.settings.get_setting(db, "api_key")
+    model = dao.settings.get_setting(db, "api_model")
+    allow_private = dao.settings.get_setting(db, "api_allow_private") == "1"
+    if not (base and key and model):
+        return {"ok": False, "message": "请先填写 API 地址、密钥与模型名"}
+    try:
+        backend = resolve_backend(db)
+        if backend.name != "remote":
+            return {"ok": False, "message": "后端未走在线通道（检查配置）"}
+        text = backend.generate([{"role": "user", "content": "回复：ok"}],
+                                max_tokens=8, temperature=0)
+        return {"ok": True, "message": f"连通成功，模型回复：{text[:40]}"}
+    except Exception as e:
+        return {"ok": False, "message": str(e)[:200]}

@@ -284,13 +284,22 @@ class EngineSession:
         def _work() -> None:
             backend = None
             try:
-                from ..ai.local import LocalBackend
-                from ..ai import find_model_file
+                # 在线 API 已配置且启用 → 用在线模型通读（质量与速度更佳）；
+                # 否则用独立本地实例（不占回合推理的模型）
+                db = self.db
+                if (dao.settings.get_setting(db, "prefer_online") == "1"
+                        and dao.settings.get_setting(db, "api_base_url")
+                        and dao.settings.get_setting(db, "api_key")
+                        and dao.settings.get_setting(db, "api_model")):
+                    backend = self.backend if self.backend.name == "remote" else None
+                if backend is None:
+                    from ..ai.local import LocalBackend
+                    from ..ai import find_model_file
 
-                model_file = find_model_file(config.MODELS_DIR)
-                if model_file is None:
-                    return
-                backend = LocalBackend(model_file, n_ctx=16384)
+                    model_file = find_model_file(config.MODELS_DIR)
+                    if model_file is None:
+                        return
+                    backend = LocalBackend(model_file, n_ctx=16384)
                 profile = build_pack_profile(self.pack, backend)
                 if not profile or self.story_id is None:
                     return

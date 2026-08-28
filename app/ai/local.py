@@ -17,8 +17,8 @@ from .backend import LLMBackend, Message
 # 择优顺序：主力 → 快速档 → 增强档（见 DESIGN.md §4 与 models/README.md）
 _PREFERRED_PATTERNS = (
     "qwen3-1.7b", "qwen3-1_7b", "qwen2.5-1.5b",
+    "qwen3-4b-instruct-2507", "qwen3-4b",
     "qwen3-0.6b", "qwen3-0_6b", "qwen2.5-0.5b",
-    "qwen3-4b",
 )
 
 _THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL)

@@ -26,6 +26,14 @@ PRESETS: dict[str, dict] = {
         ],
         "desc": "主力叙事/拆解模型（Q4_K_M，约 1.1GB）",
     },
+    "qwen3-4b": {
+        "file": "qwen3-4b-instruct-2507-q4_k_m.gguf",
+        "urls": [
+            "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+            "https://hf-mirror.com/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+        ],
+        "desc": "增强档叙事模型（Instruct-2507 非思考型，Q4_K_M，约 2.5GB）",
+    },
     "qwen3-0.6b": {
         "file": "qwen3-0.6b-instruct-q4_k_m.gguf",
         "urls": [

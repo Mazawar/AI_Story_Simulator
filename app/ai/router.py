@@ -3,6 +3,8 @@
 settings 键（存 SQLite settings 表）：
 - api_base_url / api_key / api_model   在线 API 配置
 - prefer_online                        "1" = 在线优先（失败回落本地）
+- api_allow_private                    "1" = 允许内网/本机端点（Ollama 等）
+- model_choice                         local=1.7B主力（默认）/ 4b=增强档
 """
 
 from __future__ import annotations
@@ -13,6 +15,22 @@ from ..db.database import Database
 from .backend import CannedBackend, LLMBackend
 from .local import LocalBackend, find_model_file
 from .remote import RemoteBackend
+
+
+def resolve_model_file(db: Database | None = None):
+    """按 model_choice 设置解析本地模型文件（auto=1.7B 主力，4b=增强档）。"""
+    from .local import _PREFERRED_PATTERNS
+
+    choice = ""
+    if db is not None:
+        choice = dao.settings.get_setting(db, "model_choice") or ""
+    if choice == "4b":
+        models_dir = config.MODELS_DIR
+        if models_dir.is_dir():
+            for p in sorted(models_dir.glob("*.gguf")):
+                if "4b" in p.name.lower():
+                    return p
+    return find_model_file(config.MODELS_DIR)
 
 
 def resolve_backend(db: Database | None = None, *, dry_run: bool = False,
@@ -41,7 +59,7 @@ def resolve_backend(db: Database | None = None, *, dry_run: bool = False,
     if prefer_online and base and key and model:
         return RemoteBackend(base, key, model, allow_private=allow_private)
 
-    model_file = find_model_file(config.MODELS_DIR)
+    model_file = resolve_model_file(db)
     if model_file is not None:
         try:
             return LocalBackend(model_file)
