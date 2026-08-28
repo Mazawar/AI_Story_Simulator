@@ -65,7 +65,7 @@ class TestEngineSession(unittest.TestCase):
         self._run("卖药")
         payload = self._run("修士")
         panel = next(b for b in payload.narrative if b["type"] == "panel")
-        self.assertEqual(panel["title"], "修士面板")
+        self.assertEqual(panel["title"], "状态面板")   # 兜底触发词已题材无关化
         fields = {f["label"]: f["value"] for f in panel["fields"]}
         self.assertIn(fields["灵石"], ("1", "1块"))
         self.assertIn("境界", fields)
