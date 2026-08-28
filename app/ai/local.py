@@ -129,6 +129,7 @@ class LocalBackend(LLMBackend):
     def __init__(self, model_path: Path | str, *, n_ctx: int = 32768,
                  n_threads: int | None = None, no_think: bool = True,
                  kv_q8: bool = False):
+        super().__init__()
         try:
             from llama_cpp import GGML_TYPE_Q8_0, Llama
         except ImportError as e:
@@ -207,7 +208,17 @@ class LocalBackend(LLMBackend):
             salvaged = salvage_adjudication(content)
             if salvaged is not None:
                 return salvaged
-            return json.loads(content)  # 彻底失败则交给上层优雅降级
+            # 最终兜底：无语法自由生成 + JSON 修复（GBNF 下模型偶尔卡死，
+            # 自由 JSON 反而成功率更高；仍失败才交给上层优雅降级）
+            from .backend import repair_json
+
+            with self._gen_lock:
+                out = self.llm.create_chat_completion(
+                    messages=prepare_messages(messages, no_think=self.no_think),
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+            return repair_json(strip_think(out["choices"][0]["message"]["content"] or "{}"))
 
     def stream(self, messages: list[Message], *, max_tokens: int = 1024,
                temperature: float = 0.8, stop: list[str] | None = None) -> Iterator[str]:

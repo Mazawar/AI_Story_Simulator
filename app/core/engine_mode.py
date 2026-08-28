@@ -535,17 +535,17 @@ class EngineSession:
         yield ("turn", payload)
 
     def _engine_choices(self) -> list[dict]:
-        """引擎生成的四向选项：随状态/身份线/世界暗流变化，不重复上一轮。"""
+        """引擎生成的兜底选项：随状态/身份线/世界素材变化，措辞题材无关。"""
         st = self.state
         opts: list[str] = []
 
-        # 1) 修行向（随修为阶段变化）
-        if st.progress >= 70:
-            opts.append("闭关冲击瓶颈，力求突破")
-        elif st.inventory and any("丹" in i["name"] for i in st.inventory):
-            opts.append(f"服下{st.inventory[0]['name']}，借药力修炼")
+        # 1) 休整/成长向（题材无关措辞；有境界轴才谈"闭关"）
+        if st.realms and st.progress >= 70:
+            opts.append("专注提升能力，力求突破")
+        elif st.inventory and st.realms and any("丹" in i["name"] for i in st.inventory):
+            opts.append(f"使用{st.inventory[0]['name']}辅助恢复")
         else:
-            opts.append("静心吐纳，打磨修为")
+            opts.append("休整片刻，恢复状态")
 
         # 2) 身份线当前节点行动
         line = self._identity_line()
@@ -553,20 +553,20 @@ class EngineSession:
             nxt = next((n for n in line['nodes']
                         if not self.state.flags.get(f'线:{n}')), None)
             if nxt:
-                opts.append(f"着手推进身份线：{nxt}")
+                opts.append(f"着手推进：{nxt}")
 
-        # 3) 世界暗流：未触发的最近时间表锚点（给方向不给剧透）
-        upcoming = [a for a in self.anchor_engine.anchors
-                    if not a.get('is_triggered') and a['kind'] == 'timeline'][:1]
-        if upcoming:
-            opts.append(f"向着「{upcoming[0]['title']}」的风声探寻")
+        # 3) 世界素材：未消耗的最近条目（给方向不给剧透）
+        used = set(st.extra.get("used_events", []))
+        fresh = [m for m in self.materials if m["title"] not in used][:1]
+        if fresh:
+            opts.append(f"围绕「{fresh[0]['title']}」行动")
 
         # 4) 社交/地点向（随地点变化）
         where = st.location or "此地"
         opts.append(f"在{where}找人攀谈，打听近闻")
         opts.append("换一处地方走走，见识风物")
 
-        # 去重并保证恰四项（与上轮不同的至少两项由状态差异自然产生）
+        # 去重并保证恰四项
         seen: set[str] = set()
         unique = [o for o in opts if not (o in seen or seen.add(o))]
         return [{"id": chr(65 + i), "text": t, "tags": [], "hint": ""}

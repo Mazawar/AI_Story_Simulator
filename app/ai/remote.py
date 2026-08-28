@@ -64,6 +64,7 @@ class RemoteBackend(LLMBackend):
 
     def __init__(self, base_url: str, api_key: str, model: str, *,
                  timeout: int = 120, allow_private: bool = False):
+        super().__init__()
         self.base_url = validate_endpoint(base_url, allow_private=allow_private)
         self.api_key = api_key
         self.model = model
