@@ -101,6 +101,7 @@ export default function Settings() {
         </div>
       </header>
 
+      <div className="settings-grid">
       <section className="settings-card">
         <h2><span className="card-ico">⚡</span>推理模型档位</h2>
         <div className="settings-row">
@@ -179,6 +180,7 @@ export default function Settings() {
           </div>
         )}
       </section>
+      </div>
     </div>
   )
 }
