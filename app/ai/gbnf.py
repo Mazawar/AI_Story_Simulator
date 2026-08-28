@@ -7,7 +7,7 @@ llama-cpp-python 0.3.35 的 grammar 参数需 LlamaGrammar.from_string()。
 """
 
 ADJUDICATION_GRAMMAR = r'''
-root ::= "{" ws "\"narrative\"" ws ":" ws string ws "," ws "\"effects\"" ws ":" ws effects ws "," ws "\"choices\"" ws ":" ws choices ws "}"
+root ::= "{" ws "\"narrative\"" ws ":" ws string ws "," ws "\"effects\"" ws ":" ws effects ws "," ws "\"choices\"" ws ":" ws choices ws "," ws "\"location\"" ws ":" ws string ws "}"
 effects ::= "[" ws "]" | "[" ws effect (ws "," ws effect)* ws "]"
 choices ::= "[" ws "]" | "[" ws string (ws "," ws string)* ws "]"
 effect ::= delta | item | flag | anchor

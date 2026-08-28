@@ -167,6 +167,7 @@ class LocalBackend(LLMBackend):
                 max_tokens=max_tokens,
                 temperature=temperature,
                 stop=stop or None,
+                repeat_penalty=1.15,       # 抗复读：小模型倾向逐字复述上一轮
             )
         return strip_think(out["choices"][0]["message"]["content"] or "")
 
@@ -185,6 +186,7 @@ class LocalBackend(LLMBackend):
                 max_tokens=max_tokens,
                 temperature=temperature,
                 grammar=grammar_object(),
+                repeat_penalty=1.15,
             )
         content = strip_think(out["choices"][0]["message"]["content"] or "{}")
         try:
@@ -217,6 +219,7 @@ class LocalBackend(LLMBackend):
                     messages=prepare_messages(messages, no_think=self.no_think),
                     max_tokens=max_tokens,
                     temperature=temperature,
+                    repeat_penalty=1.15,
                 )
             return repair_json(strip_think(out["choices"][0]["message"]["content"] or "{}"))
 

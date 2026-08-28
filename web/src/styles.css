@@ -450,3 +450,35 @@ body {
   background: linear-gradient(90deg, transparent, var(--line));
 }
 .turn-divider::after { background: linear-gradient(90deg, var(--line), transparent); }
+
+/* ---- 剧情章节卡（幕切换的仪式感） ---- */
+.chapter-card {
+  margin: 1.6em 0 1.1em; padding: 18px 22px; text-align: center;
+  border-radius: 14px;
+  background:
+    radial-gradient(400px 140px at 50% -30%, rgba(216, 184, 120, 0.14), transparent 70%),
+    var(--ink-2);
+  border: 1px solid rgba(216, 184, 120, 0.4);
+  animation: chapter-in 0.7s ease;
+}
+@keyframes chapter-in {
+  0% { opacity: 0; transform: scale(0.96); letter-spacing: 12px; }
+  100% { opacity: 1; transform: scale(1); }
+}
+.chapter-card-num {
+  font-size: 12px; letter-spacing: 6px; color: var(--text-dim); margin-bottom: 8px;
+}
+.chapter-card-title {
+  font-family: var(--serif); font-size: 22px; letter-spacing: 8px;
+  color: var(--gold); margin-bottom: 8px;
+}
+.chapter-card-summary {
+  font-family: var(--serif); font-size: 13.5px; line-height: 1.9;
+  color: var(--text-dim); max-width: 520px; margin: 0 auto;
+}
+
+.hud-role {
+  font-size: 12px; color: var(--jade); margin-bottom: 6px;
+  padding-bottom: 6px; border-bottom: 1px dashed var(--line);
+  font-family: var(--serif);
+}

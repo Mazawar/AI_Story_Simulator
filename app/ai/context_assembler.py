@@ -30,7 +30,8 @@ def _clip(text: str, budget: int) -> str:
 def assemble_messages(pack: Pack, characters: list[dict], state, recent_turns: list[dict],
                       rolling_summary: str, anchor_block: str,
                       player_input: str, turn: int,
-                      *, extra_system: str = "", world_agenda: str = "") -> list[dict]:
+                      *, extra_system: str = "", world_agenda: str = "",
+                      player_role: str = "") -> list[dict]:
     """组装引擎模式的一轮上下文。
 
     state: core.rules.NumericState；recent_turns: [{"input","text"}]（旧→新）。
@@ -87,7 +88,8 @@ def assemble_messages(pack: Pack, characters: list[dict], state, recent_turns: l
 
     summary_text = _clip(rolling_summary, SUMMARY_BUDGET) if rolling_summary else ""
 
-    user = f"""【当前状态】{state_digest}
+    role_line = f"【你的角色】{player_role}\n" if player_role else ""
+    user = f"""{role_line}【当前状态】{state_digest}
 {f'【前情摘要】{summary_text}' if summary_text else ''}
 【最近回合】
 {history_text}
@@ -95,7 +97,7 @@ def assemble_messages(pack: Pack, characters: list[dict], state, recent_turns: l
 【玩家行动】{player_input}
 
 【推进纪律】上述最近回合里已写过的事不得重演；本轮 narrative 必须落到具体新事件上
-（who/what/where 有其一即可），40~120 字。请输出叙事、effects 与 choices。"""
+（who/what/where 有其一即可）。请输出叙事、effects 与 choices。"""
 
     return [
         {"role": "system", "content": system},

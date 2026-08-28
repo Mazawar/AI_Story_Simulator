@@ -133,6 +133,15 @@ export function BlockView({ block, onChoice, entities }) {
         </div>
       )
 
+    case 'chapter':
+      return (
+        <div className="chapter-card">
+          <div className="chapter-card-num">第 {block.num} 幕</div>
+          <div className="chapter-card-title">{block.title}</div>
+          {block.summary ? <div className="chapter-card-summary">{block.summary}</div> : null}
+        </div>
+      )
+
     case 'divider':
       return <div className="turn-divider">❖</div>
 

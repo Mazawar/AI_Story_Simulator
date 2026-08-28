@@ -16,8 +16,13 @@ PROFILE_PROMPT = """你是剧本配置生成器。通读下面的剧本全文，
 
 {
  "genre": "题材一句话（如 修仙/末日生存/武侠）",
- "panel_trigger_word": "打开状态面板的触发词，2-3 字中文，贴合剧本题材（如 修士/猎人面板改'状态'/生存/属性）",
+ "panel_trigger_word": "打开状态面板的触发词，2-3 字中文，贴合剧本题材（如 修士/状态/生存/属性）",
  "starting_location": "剧本开局玩家所在的地点名（如 爱情公寓3601/七玄门/安全屋）",
+ "player_role": "玩家扮演的角色定位一句话（如 爱情公寓的新租客/穿越进剧本世界的角色）",
+ "locations": ["剧本中会出现的地点名（按主要程度，8-20个，中文名）"],
+ "storyline": [
+   {"beat": 1, "title": "剧情节拍标题（短）", "summary": "这一节拍发生什么、涉及谁、玩家如何卷入（2-3句）"}
+ ],
  "resources": [
    {"ref": "资源名", "init": 初始数值, "max": 上限数值或省略, "kind": "vital|currency|progress"}
  ],
@@ -48,6 +53,11 @@ PROFILE_PROMPT = """你是剧本配置生成器。通读下面的剧本全文，
   source 取值 ONLY：realm（境界文本）| progress（经验进度）| lifespan（剩余寿元）|
   res:资源名（对应 resources 里的 ref）| location | inventory（物品列表）|
   flags:前缀（收集该前缀的剧情标记）。
+- storyline：**剧情主线大纲（最重要字段）**——通读剧本后把故事拆成 4~12 个有序节拍
+  （beat 递增），每个节拍是一段有起止的剧情（原剧本的时间表/章节/集数映射到这里；
+  没有明确主线的按其冲突结构提炼）。summary 写清：发生什么、谁参与、
+  玩家（作为其角色）如何被卷入。玩家推进到该节拍时，系统展示节拍标题并把
+  summary 交给主持人执行——这就是"剧情推动"的骨架。
 - characters：剧本明确给出的角色卡（没有就空数组）。
 - creation：剧本要求开局向玩家依次询问的创建问题（没有就空数组）。
 
@@ -155,6 +165,7 @@ def normalize_profile(raw: dict) -> dict | None:
         "genre": str(raw.get("genre", ""))[:24],
         "panel_trigger_word": str(raw.get("panel_trigger_word", "")).strip()[:6] or "状态",
         "starting_location": str(raw.get("starting_location", "")).strip()[:16],
+        "player_role": str(raw.get("player_role", "")).strip()[:40],
         "realms": realms,
         "resources": resources,
         "lifespan_caps": lifespan_caps,
@@ -162,6 +173,22 @@ def normalize_profile(raw: dict) -> dict | None:
         "layer_cost_years": layer_cost,
         "panels": _norm_panels(raw.get("panels"), refs),
     }
+    # 剧情主线节拍表（剧情推动系统的骨架）
+    storyline = []
+    for b in (raw.get("storyline") or [])[:12]:
+        if isinstance(b, dict) and str(b.get("title", "")).strip():
+            storyline.append({
+                "beat": len(storyline) + 1,
+                "title": str(b["title"]).strip()[:20],
+                "summary": str(b.get("summary", "")).strip()[:160],
+            })
+    schema["storyline"] = storyline
+    # 剧本地名表：引擎每轮从叙事中匹配、自动维护玩家位置（AI 配置驱动，非写死正则）
+    locations = []
+    for loc in (raw.get("locations") or [])[:30]:
+        if isinstance(loc, str) and 1 < len(loc.strip()) <= 16:
+            locations.append(loc.strip())
+    schema["locations"] = locations
     if isinstance(raw.get("characters"), list):
         chars = [{"name": str(c.get("name", "")).strip()[:12],
                   "desc": str(c.get("desc", "")).strip()[:80]}

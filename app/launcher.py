@@ -1,4 +1,4 @@
-"""桌面启动器：启动本地服务 → 打开游戏窗口（pywebview 原生窗口 → 系统浏览器）。
+"""桌面启动器：启动本地服务 → 打开游戏窗口（Edge 应用模式 → 系统浏览器）。
 
 - 开发：story-sim play（main.py 调用 launch()）
 - 打包：EXE 入口直接调用 launch()，关窗即退出
@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 import webbrowser
+from pathlib import Path
 
 from . import config
 
@@ -86,33 +87,29 @@ def _wait_started(server, timeout: float = 30.0) -> bool:
 
 
 def _open_window(url: str) -> bool:
-    """优先 pywebview 原生窗口（关窗可感知）；否则系统浏览器。返回是否为原生窗口。"""
+    """pywebview 原生窗口（关窗即退出）；失败回退系统浏览器。"""
     try:
         import webview  # pywebview（pyproject [desktop] extra）
 
         window = webview.create_window(
             config.APP_NAME, url, width=1280, height=820, min_size=(960, 640),
         )
-        # 显式传图标：任务栏/标题栏用的是窗口 Icon（与 EXE 文件图标是两回事）；
-        # 不传时 winforms 从 EXE 提取图标的回退路径有 64 位句柄截断问题
         icon_arg = str(config.ICON_PATH) if config.ICON_PATH.is_file() else None
-        _log().info("窗口图标：%s", icon_arg or "未找到（回退默认）")
+        _log().info("窗口图标：%s", icon_arg or "未找到")
         webview.start(icon=icon_arg)
         return True
     except TypeError:
-        # 旧版 pywebview 无 icon 参数
         try:
             webview.start()
             return True
         except ImportError:
             pass
         except Exception as e:
-            _log().warning("pywebview 启动失败，回退浏览器窗口：%s", e)
+            _log().warning("pywebview 启动失败：%s", e)
     except ImportError:
         pass
     except Exception as e:
-        _log().warning("pywebview 启动失败，回退浏览器窗口：%s", e)
-
+        _log().warning("pywebview 启动失败：%s", e)
     webbrowser.open(url)
     return False
 
@@ -135,17 +132,13 @@ def launch(dry_run: bool = False) -> int:
 
     native = _open_window(url)
     if native:
-        # 原生窗口关闭 → 退出整个程序
         server.should_exit = True
         log.info("窗口关闭，退出")
         return 0
-
-    # 浏览器模式：主进程驻留，Ctrl+C 退出
     print(f"游戏已在浏览器中打开：{url}")
-    print("关闭此窗口（或 Ctrl+C）退出游戏。")
     try:
         while True:
             time.sleep(3600)
     except KeyboardInterrupt:
         server.should_exit = True
-        return 0
+    return 0

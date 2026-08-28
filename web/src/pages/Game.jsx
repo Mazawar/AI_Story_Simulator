@@ -6,7 +6,7 @@ import { BlockView, StreamView } from '../components/blocks.jsx'
 
 const { Text } = Typography
 
-const BASE_TRIGGERS = ['存档', '读取存档', '提示', '本章结束']
+const BASE_TRIGGERS = ['存档', '读取存档', '继续', '提示', '本章结束']
 
 function playParams() {
   const q = new URLSearchParams(location.hash.split('?')[1] || '')
@@ -85,6 +85,7 @@ export default function Game() {
   const [wizarding, setWizarding] = useState(false)
   const [hudOpen, setHudOpen] = useState(true)
   const [panelWord, setPanelWord] = useState('状态')
+  const [playerRole, setPlayerRole] = useState('')
   const [hud, setHud] = useState(null)   // 最新播报条字段 → 右上角悬浮卡
   const endRef = useRef(null)
   const openedRef = useRef(false)
@@ -133,6 +134,7 @@ export default function Game() {
         pidRef.current = r.playthrough_id
         setPid(r.playthrough_id)
         if (r.panel_word) setPanelWord(r.panel_word)
+        if (r.player_role) setPlayerRole(r.player_role)
 
         es = new EventSource(sseUrl(`/api/play/${r.playthrough_id}/events`))
         es.onopen = () => {
@@ -157,14 +159,14 @@ export default function Game() {
             // 播报条从叙事流剥离 → 右上角 HUD
             const bcBlock = (p.narrative || []).find((b) => b.type === 'broadcast')
             if (bcBlock) setHud(bcBlock.fields)
+            const flowBlocks = (p.narrative || []).filter((b) => b.type !== 'broadcast')
             if (p.choices && p.choices.length) {
               extra.push({ type: 'choices', options: p.choices })
             }
             const all = p.deltas || []
             const numeric = all.filter((d) =>
-              d.ref === '修为' || String(d.ref).startsWith('item:') ||
-              (meta?.resources || []).some((r) => String(d.ref).includes(r.ref)) ||
-              /[一-龥]/.test(String(d.ref).replace('flag:', '').replace('item:', '')))
+              (d.ref === '灵石' || d.ref === '修为' ||
+               String(d.ref).startsWith('item:')) && d.ref !== '地点')
             const progress = all.filter((d) => String(d.ref).startsWith('flag:') || d.ref === 'anchor')
             if (numeric.length) {
               extra.push({ type: 'deltas', items: numeric })
@@ -181,7 +183,7 @@ export default function Game() {
                 extra.push({ type: 'note', text: '剧情推进：' + [...new Set(names)].join('、') })
               }
             }
-            setBlocks((b) => [...b, { type: 'divider' }, ...(p.narrative || []), ...extra])
+            setBlocks((b) => [...b, { type: 'divider' }, ...flowBlocks, ...extra])
             setStream('')
             setBusy(false)
           } else if (ev.type === 'note') {
@@ -239,6 +241,7 @@ export default function Game() {
       {hud && hud.length > 0 && (
         <aside className="hud-card" onClick={() => setHudOpen((v) => !v)}>
           <div className="hud-title">◈ 状态</div>
+          {playerRole && <div className="hud-role">扮演：{playerRole}</div>}
           <div className={"hud-fields" + (hudOpen ? '' : ' collapsed')}>
             {hud.map((f, i) => (
               <span className="hud-field" key={i}>

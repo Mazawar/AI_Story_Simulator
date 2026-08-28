@@ -195,10 +195,13 @@ class NumericState:
 
     # ---- 裁决执行 ----------------------------------------------------------------
 
-    def apply_effects(self, effects: list[dict]) -> tuple[list[dict], list[dict]]:
+    def apply_effects(self, effects: list[dict],
+                      narrative_text: str = "") -> tuple[list[dict], list[dict]]:
         """执行模型声明的世界变化。引擎是记录员而非裁判：
         资源可由模型在推演中动态新增（模拟人生式——世界由 AI 定义），
-        引擎只守数值边界（非负/上限）与货币类防刷节奏。"""
+        引擎只守数值边界（非负/上限）、货币防刷节奏，以及"账实核对"——
+        动态新增的资源名必须在本轮叙事中出现过（防题材漂移，如末日冒出灵石）。"""
+        self._narrative = narrative_text
         applied: list[dict] = []
         rejected: list[dict] = []
         for eff in effects or []:
@@ -277,6 +280,8 @@ class NumericState:
         if "寿元" in ref or "寿命" in ref:
             rejected.append({"effect": eff, "why": "寿元由境界与时间事件驱动，禁止直接修改"})
             return
+        if "地点" in ref:
+            return  # 地点由裁决 JSON 的 location 必填字段管理，effects 里忽略
 
         # 境界轴的修为走专属进度通道（100 满升层）；其余一切数值由模型动态定义
         if ref == "修为" and self.realms:
@@ -298,7 +303,11 @@ class NumericState:
 
         res = self._match_resource(ref)
         if res is None:
-            # 模型推演出配置外的新资源 → 动态注册接纳（世界由 AI 定义）
+            # 动态新增资源 → 账实核对：叙事里出现过的才注册（题材漂移防线）
+            if ref not in self._narrative:
+                rejected.append({"effect": eff,
+                                 "why": f"叙事未提及{ref}，不能凭空产生"})
+                return
             res = self._register_resource(ref)
             if res is None:
                 rejected.append({"effect": eff,

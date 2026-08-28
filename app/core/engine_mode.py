@@ -65,10 +65,11 @@ class EngineSession:
         self.anchor_engine = AnchorEngine(parse_anchors(pack))
 
         self.state = state or NumericState.new_game(self.schema)
-        # 开局地点：AI 配置提供（剧本开局场景）；推演中由模型 location 指令更新
-        if not self.state.location and self.schema.get("source") == "profile":
-            self.state.location = self.schema.get("starting_location") or ""
         self.rolling_summary = rolling_summary
+        # 开局地点：AI 配置提供（剧本开局场景）；resume 传入的旧状态同样补齐。
+        # 推演中场景变化由模型 location 指令更新。
+        if not self.state.location and self.schema.get("starting_location"):
+            self.state.location = self.schema["starting_location"]
         # 世界素材：全包 bullet 通用提取（事件池/NPC/探索条目通吃），大包用于
         # "世界将发生之事"清单与停滞注入；小包全文注入时素材已在剧本原文里
         self.random_events = parse_random_events(pack)
@@ -78,9 +79,13 @@ class EngineSession:
         # AI 生成的面板定义（profile.panels）；确定性兜底时为空
         self.profile_panels: list[dict] = self.schema.get("panels") or []
         self._profile_scheduled = False
-        # 旧版 AI 配置（缺开局地点等新字段）→ 后台重新生成覆盖
+        # 剧情主线（AI 从剧本提炼的节拍表）：系统按节拍推动剧情，玩家扮演角色
+        self.storyline: list[dict] = self.schema.get("storyline") or []
+        # 旧版 AI 配置（缺主线/地点表等新字段）→ 后台重新生成覆盖
         if (self.schema.get("source") == "profile"
-                and "starting_location" not in self.schema):
+                and ("starting_location" not in self.schema
+                     or "storyline" not in self.schema
+                     or "locations" not in self.schema)):
             self._schedule_profile_generation()
             self._profile_scheduled = True
         # 恢复锚点触发集
@@ -444,6 +449,28 @@ class EngineSession:
                 "当剧情确实完成某节点时，用 {\"flag\":\"线·<节点名>\"} 标记（每节点至多一次）；"
                 "禁止跳步、禁止凭空完成。"
             )
+        # 剧情主线（系统是导演）：当前幕注入 + 推进规则；幕切换时给章节卡
+        chapter_card: dict | None = None
+        if self.storyline:
+            beat_idx = min(int(self.state.extra.get("beat_idx", 0)), len(self.storyline) - 1)
+            cur = self.storyline[beat_idx]
+            nxt = (self.storyline[beat_idx + 1]
+                   if beat_idx + 1 < len(self.storyline) else None)
+            extra_system += (
+                f"\n\n【剧情主线 · 第{beat_idx + 1}幕：{cur['title']}】{cur['summary']}\n"
+                "你是剧情推动者：本轮叙事必须把玩家卷入当前幕的剧情（NPC 按剧本行动、"
+                "事件向你走来、冲突向你展开）；当前幕的关键冲突在叙事中落地后，"
+                "在 effects 里加 {\"advance\":true} 推进到下一幕"
+                + (f"（下一幕：{nxt['title']}）。" if nxt else "（已是大结局，自由收束）。")
+                + "\n玩家是其扮演的角色，不是旁观者——剧情因玩家的选择而改变走向，"
+                  "但幕内的核心事件必须发生。"
+            )
+        # 开局地点未定 → 提醒模型本轮声明（冷启动一次即可）
+        if not self.state.location:
+            extra_system += (
+                "\n\n【开局】本轮请确定玩家当前所在地点，"
+                "并在 effects 里用 {\"location\":\"地点名\"} 声明。"
+            )
         # 剧情停滞 → 强制注入随机事件（世界活性的核心机制）
         stalled = self._stall_turns(turn) >= STALL_AFTER_TURNS
         forced_event = self._pick_stalled_event() if stalled else None
@@ -459,6 +486,7 @@ class EngineSession:
             self.rolling_summary, self.anchor_engine.context_block(turn),
             user_input, turn, extra_system=extra_system,
             world_agenda=self._world_agenda(),
+            player_role=self.schema.get("player_role", ""),
         )
         try:
             data = self.backend.generate_json(messages, max_tokens=2000, temperature=0.8)
@@ -485,7 +513,25 @@ class EngineSession:
         narrative_text = str(data.get("narrative", "")).strip() or "（这一刻，什么也没有发生。）"
         effects = [e for e in (data.get("effects") or []) if isinstance(e, dict)]
 
-        applied, _rejected = self.state.apply_effects(effects)
+        # 剧情主线：模型宣告当前幕关键冲突落地 → 推进到下一幕 + 章节卡
+        chapter_card: dict | None = None
+        advanced = any(e.get("advance") in (True, "true", "True") for e in effects)
+        if advanced and self.storyline:
+            beat_idx = int(self.state.extra.get("beat_idx", 0))
+            if beat_idx + 1 < len(self.storyline):
+                self.state.extra["beat_idx"] = beat_idx + 1
+                nxt = self.storyline[beat_idx + 1]
+                chapter_card = {"type": "chapter", "num": beat_idx + 2,
+                                "title": nxt["title"], "summary": nxt["summary"]}
+
+        # 场景地点：裁决 JSON 的必填字段（GBNF 强制每轮输出），引擎直接采信
+        scene_location = str(data.get("location", "")).strip()[:12]
+        applied, _rejected = self.state.apply_effects(effects, narrative_text=narrative_text)
+        if scene_location and scene_location != self.state.location:
+            old = self.state.location
+            self.state.location = scene_location
+            applied.append({"ref": "地点", "op": "=", "v": 1,
+                            "reason": f"{old or '未知'} → {scene_location}"})
         # 身份线节点自动登记：模型写的自然名 flag → 线:<节点>
         applied += self._sync_identity_flags()
         # 停滞注入的时间表事件：引擎直接放行（其自然条件可能尚未满足）
@@ -515,6 +561,17 @@ class EngineSession:
                     self.rolling_summary = (self.rolling_summary + "；" if self.rolling_summary else "") \
                         + f"事件【{a['title']}】已发生"
 
+        # 地点自动维护：从叙事匹配剧本地名表（长名优先、取最后出现处）
+        if self.schema.get("locations"):
+            hits = [(narrative_text.rfind(loc), loc) for loc in self.schema["locations"]
+                    if loc in narrative_text]
+            if hits:
+                _, latest = max(hits, key=lambda x: x[0])
+                if latest != self.state.location:
+                    self.state.location = latest
+                    applied.append({"ref": "地点", "op": "=", "v": 1,
+                                    "reason": f"行至 {latest}"})
+
         # 模型根据本轮剧情实时提议选项（清洗后采纳）；缺失/不合规回退状态机生成
         model_choices = []
         for c in (data.get("choices") or []):
@@ -534,6 +591,9 @@ class EngineSession:
                          for i, t in enumerate(deduped[:4])]
 
         blocks = parse_narrative(narrative_text)
+        # 幕切换 → 章节卡置顶（系统的"剧情推动"可见化）
+        if chapter_card is not None:
+            blocks.insert(0, chapter_card)
         blocks.append({"type": "broadcast", "fields": self.state.broadcast(applied)})
         entities = [
             {"ref": f"character:{c['name']}", "surface": c["name"]}
@@ -583,7 +643,7 @@ class EngineSession:
             nxt = next((n for n in line['nodes']
                         if not self.state.flags.get(f'线:{n}')), None)
             if nxt:
-                opts.append(f"着手推进：{nxt}")
+                opts.append(f"设法{'' if len(nxt) > 3 else ''}{nxt}")
 
         # 3) 世界素材：未消耗的最近条目（给方向不给剧透）
         used = set(st.extra.get("used_events", []))

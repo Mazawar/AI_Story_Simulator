@@ -154,7 +154,8 @@ def parse_world_materials(pack: Pack, *, limit: int = 40) -> list[dict]:
     materials: list[dict] = []
     seen_titles: set[str] = set()
     for section in pack.sections:
-        if section.key in ("preamble", "opening"):
+        # numeric/panels 章节的 bullet 是数值规则与面板格式说明，不是世界事件
+        if section.key in ("preamble", "opening", "numeric", "panels"):
             continue
         current_group = section.title
         for line in section.body.splitlines():
@@ -164,11 +165,16 @@ def parse_world_materials(pack: Pack, *, limit: int = 40) -> list[dict]:
             if re.match(r"^[\-*·]\s", s):
                 title = ""
                 desc = ""
-                m = re.match(r"^[-*·]\s*([^（（：:]{2,16})\s*[（:：]?(.*)$", s)
+                # 角色卡字段标签行（"行为锚：xxx"/"底线（不可触碰）：xxx"）不是事件素材
+                if re.match(r"^[-*·]\s*[一-龥]{2,8}[（(：:]", s) or s[2:6] in (
+                        "底线", "身份", "修为", "时间流", "核心循环"):
+                    continue
+                s_clean = s.replace("**", "")
+                m = re.match(r"^[-*·]\s*([^（（：:]{2,16})\s*[（:：]?(.*)$", s_clean)
                 if m:
                     title, desc = m.group(1).strip(), m.group(2).strip("（）()。")
                 else:
-                    title = s.lstrip("-*· ").strip()[:16]
+                    title = s_clean.lstrip("-*· ").strip()[:16]
                 if (not title or len(title) < 2
                         or title.startswith(("我", "你", "玩家", "例如", "\"", "“"))
                         or "揭晓" in title or "真相" in s

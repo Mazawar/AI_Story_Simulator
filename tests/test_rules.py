@@ -43,7 +43,8 @@ class TestApplyEffects(unittest.TestCase):
         """模型发明的新数值 → 引擎动态注册（模拟人生式世界生长）。"""
         st = new_state()
         applied, rejected = st.apply_effects(
-            [{"ref": "体力", "op": "+", "v": 20, "reason": "充分休息"}])
+            [{"ref": "体力", "op": "+", "v": 20, "reason": "充分休息"}],
+            narrative_text="他感觉体力恢复了不少")
         self.assertEqual(rejected, [])
         self.assertEqual(st.attrs.get("体力"), 20.0)
         fields = {f["label"] for f in st.broadcast()}
