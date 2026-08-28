@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Button } from 'antd'
-import { PlayCircleOutlined, ReloadOutlined, StepForwardOutlined, SettingOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, ReloadOutlined, StepForwardOutlined, SettingOutlined,
+         LeftOutlined, RightOutlined } from '@ant-design/icons'
+import { useState as usePageState } from 'react'
 import { api } from '../api.js'
 
 const PACK_META = {
@@ -16,10 +18,37 @@ function metaOf(title) {
   return { desc: '剧情模拟 · 世界运行中', tone: '墨绿' }
 }
 
+function Pager({ page, total, onPage }) {
+  if (total <= 1) return null
+  return (
+    <div className="pager">
+      <button className="pager-btn" disabled={page === 0} onClick={() => onPage(page - 1)}>
+        <LeftOutlined />
+      </button>
+      <span className="pager-dots">
+        {Array.from({ length: total }).map((_, i) => (
+          <span key={i} className={i === page ? 'pager-dot on' : 'pager-dot'} />
+        ))}
+      </span>
+      <button className="pager-btn" disabled={page === total - 1} onClick={() => onPage(page + 1)}>
+        <RightOutlined />
+      </button>
+    </div>
+  )
+}
+
+function chunk(arr, n) {
+  const out = []
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
+  return out
+}
+
 export default function Library() {
   const [packs, setPacks] = useState(null)
   const [plays, setPlays] = useState([])
   const [loading, setLoading] = useState(false)
+  const [playPage, setPlayPage] = useState(0)
+  const [packPage, setPackPage] = useState(0)
   const [error, setError] = useState('')
 
   const load = async () => {
@@ -74,8 +103,10 @@ export default function Library() {
       {plays.length > 0 && (
         <section className="resume-section">
           <h2 className="resume-title">未竟之局 · {plays.length}</h2>
-          <div className="resume-strip">
-            {plays.map((p) => (
+          <Pager page={playPage} total={Math.ceil(plays.length / 3)}
+                 onPage={setPlayPage} />
+          <div className="strip-page">
+            {chunk(plays, 3)[Math.min(playPage, Math.ceil(plays.length / 3) - 1)].map((p) => (
               <div key={p.id} className="resume-card">
                 <div className="resume-card-top">
                   <span className="resume-card-badge">{p.mode === 'engine' ? '引擎' : '直通'}</span>
@@ -95,8 +126,10 @@ export default function Library() {
         </section>
       )}
 
-      <div className="library-strip">
-        {(packs || []).map((p) => {
+      <Pager page={packPage} total={Math.ceil((packs || []).length / 3)}
+             onPage={setPackPage} />
+      <div className="strip-page">
+        {chunk((packs || []), 3)[Math.min(packPage, Math.max(0, Math.ceil((packs || []).length / 3) - 1))]?.map((p) => {
           const m = metaOf(p.title)
           const hasWizard = (p.creation_steps || []).length > 0
           return (

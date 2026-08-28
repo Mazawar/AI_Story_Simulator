@@ -135,6 +135,25 @@ export default function Game() {
         pidRef.current = r.playthrough_id
         setPid(r.playthrough_id)
         if (r.panel_word) setPanelWord(r.panel_word)
+
+        // 续玩：回放全部历史回合（叙事 + 每一步玩家选择记录）
+        if (params.pid) {
+          try {
+            const hist = await api(`/api/play/${r.playthrough_id}/history`)
+            const replay = []
+            for (const t of hist.turns) {
+              if (t.player_input && t.player_input !== '开始'
+                  && !t.player_input.startsWith('【人物已定】')) {
+                replay.push({ type: 'note', text: '你 › ' + t.player_input })
+              }
+              replay.push(...(t.payload.narrative || []))
+            }
+            // 最后一回合的选项保持可点（继续当前剧情）
+            const lastChoices = (hist.turns.at(-1)?.payload?.choices) || []
+            if (lastChoices.length) replay.push({ type: 'choices', options: lastChoices })
+            setBlocks(replay)
+          } catch { /* 回放失败不阻塞推演 */ }
+        }
         if (r.player_role) setPlayerRole(r.player_role)
         setBackendName(r.backend)
 
