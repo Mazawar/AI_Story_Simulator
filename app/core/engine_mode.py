@@ -65,6 +65,9 @@ class EngineSession:
         self.anchor_engine = AnchorEngine(parse_anchors(pack))
 
         self.state = state or NumericState.new_game(self.schema)
+        # 开局地点：AI 配置提供（剧本开局场景）；推演中由模型 location 指令更新
+        if not self.state.location and self.schema.get("source") == "profile":
+            self.state.location = self.schema.get("starting_location") or ""
         self.rolling_summary = rolling_summary
         # 世界素材：全包 bullet 通用提取（事件池/NPC/探索条目通吃），大包用于
         # "世界将发生之事"清单与停滞注入；小包全文注入时素材已在剧本原文里
@@ -75,6 +78,11 @@ class EngineSession:
         # AI 生成的面板定义（profile.panels）；确定性兜底时为空
         self.profile_panels: list[dict] = self.schema.get("panels") or []
         self._profile_scheduled = False
+        # 旧版 AI 配置（缺开局地点等新字段）→ 后台重新生成覆盖
+        if (self.schema.get("source") == "profile"
+                and "starting_location" not in self.schema):
+            self._schedule_profile_generation()
+            self._profile_scheduled = True
         # 恢复锚点触发集
         triggered = set(self.state.extra.get("triggered_anchors", []))
         for a in self.anchor_engine.anchors:
@@ -144,12 +152,14 @@ class EngineSession:
         if stripped == "读取存档":
             yield ("note", self._load("autosave"))
             return
-        if stripped == "修士":
+        # 状态面板触发词：AI 配置的题材词（猎人面板/状态/生存…）+「修士」兼容
+        panel_word = self.schema.get("panel_trigger_word") or "状态"
+        if stripped in (panel_word, "修士", "状态", "面板"):
             payload = self._render_profile_panel()
             if payload is None:
                 payload = TurnPayload(
                     turn_idx=self.turn_idx + 1,
-                    narrative=[_panel_block("修士面板", self.state.panel_cultivator())],
+                    narrative=[_panel_block(f"{panel_word}面板", self.state.panel_cultivator())],
                     system_note="修士面板（引擎实时数据）", panel="cultivator",
                     choices=self._engine_choices(),
                 )

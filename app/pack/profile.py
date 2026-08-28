@@ -16,6 +16,8 @@ PROFILE_PROMPT = """你是剧本配置生成器。通读下面的剧本全文，
 
 {
  "genre": "题材一句话（如 修仙/末日生存/武侠）",
+ "panel_trigger_word": "打开状态面板的触发词，2-3 字中文，贴合剧本题材（如 修士/猎人面板改'状态'/生存/属性）",
+ "starting_location": "剧本开局玩家所在的地点名（如 爱情公寓3601/七玄门/安全屋）",
  "resources": [
    {"ref": "资源名", "init": 初始数值, "max": 上限数值或省略, "kind": "vital|currency|progress"}
  ],
@@ -39,8 +41,10 @@ PROFILE_PROMPT = """你是剧本配置生成器。通读下面的剧本全文，
   kind：vital=有上限的状态值（生命/饥饿），currency=可积累的财富（灵石/物资/金钱），
   progress=成长经验（修为/经验值）。ref 用剧本里的原名。
 - realm_axis：剧本有明确等级/境界阶梯才填；没有就 null。
-- panels：剧本里有面板/状态栏描述（含 LaTeX 样式面板）就逐字段转写成 fields；
-  没有就给一个默认 {"key":"status","title":"状态","fields":[{"label":"生命","source":"res:生命"},{"label":"地点","source":"location"}]}。
+- panels：剧本里有面板/状态栏描述（含 LaTeX 样式面板）就**逐字段完整转写**——
+  剧本面板里出现的每个数据项（属性/等级/货币/装备/图鉴/状态/称号/地点…）都要成为
+  一个 field，不要偷懒只写两三个；source 标明数据从哪来。
+  剧本没有面板描述时，按 resources 自动生成一个（每个资源一个 field + 地点）。
   source 取值 ONLY：realm（境界文本）| progress（经验进度）| lifespan（剩余寿元）|
   res:资源名（对应 resources 里的 ref）| location | inventory（物品列表）|
   flags:前缀（收集该前缀的剧情标记）。
@@ -93,7 +97,7 @@ def _norm_panels(raw, resource_refs: list[str]) -> list[dict]:
         if not isinstance(p, dict):
             continue
         fields = []
-        for f in (p.get("fields") or [])[:12]:
+        for f in (p.get("fields") or [])[:16]:
             if not isinstance(f, dict):
                 continue
             label = str(f.get("label", "")).strip()[:12]
@@ -149,6 +153,8 @@ def normalize_profile(raw: dict) -> dict | None:
     schema: dict = {
         "source": "profile",
         "genre": str(raw.get("genre", ""))[:24],
+        "panel_trigger_word": str(raw.get("panel_trigger_word", "")).strip()[:6] or "状态",
+        "starting_location": str(raw.get("starting_location", "")).strip()[:16],
         "realms": realms,
         "resources": resources,
         "lifespan_caps": lifespan_caps,

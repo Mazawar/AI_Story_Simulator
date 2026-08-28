@@ -124,14 +124,17 @@ def create_play(request: Request, body: PlayRequest):
                                pack, playthrough_id)
         engine._persist_state()
         backend_name, n_ctx = engine.backend.name, 8192
+        panel_word = engine.schema.get("panel_trigger_word") or "状态"
     else:
         n_ctx = pick_context_window(len(pack.system_prompt()))
         engine = DirectEngine(db, _shared_backend(db, request.app.state.dry_run, n_ctx),
                               pack, playthrough_id, n_ctx=n_ctx)
         backend_name = engine.backend.name
+        panel_word = "状态"
     REGISTRY.put(playthrough_id, PlaySession(engine))
     return {"playthrough_id": playthrough_id, "pack_title": pack.title,
-            "backend": backend_name, "n_ctx": n_ctx, "mode": mode}
+            "backend": backend_name, "n_ctx": n_ctx, "mode": mode,
+            "panel_word": panel_word}
 
 
 def _session_or_404(playthrough_id: int) -> PlaySession:

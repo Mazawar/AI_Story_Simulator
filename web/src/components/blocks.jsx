@@ -133,6 +133,9 @@ export function BlockView({ block, onChoice, entities }) {
         </div>
       )
 
+    case 'divider':
+      return <div className="turn-divider">❖</div>
+
     case 'note':
       return <div className="system-note">〔{block.text}〕</div>
 

@@ -20,6 +20,7 @@ class TestNormalizeProfile(unittest.TestCase):
     def test_full_valid(self):
         raw = {
             "genre": "末日生存",
+            "starting_location": "城郊居民楼",
             "resources": [
                 {"ref": "生命", "init": 100, "max": 100, "kind": "vital"},
                 {"ref": "物资", "init": 5, "kind": "currency"},
@@ -42,6 +43,7 @@ class TestNormalizeProfile(unittest.TestCase):
         self.assertEqual([r["ref"] for r in profile["resources"]],
                          ["生命", "物资", "弹药"])
         self.assertEqual(profile["realms"], [])
+        self.assertEqual(profile["starting_location"], "城郊居民楼")
         self.assertEqual(len(profile["panels"]), 1)
         self.assertEqual(len(profile["panels"][0]["fields"]), 3)
 
