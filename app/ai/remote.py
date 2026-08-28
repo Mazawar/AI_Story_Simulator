@@ -120,7 +120,8 @@ class RemoteBackend(LLMBackend):
                 raise
 
     def _generate_once(self, messages: list[Message], *, max_tokens: int,
-                       temperature: float, stop: list[str] | None) -> str:
+                       temperature: float, stop: list[str] | None,
+                       json_mode: bool = False) -> str:
         payload = {
             "model": self.model,
             "messages": messages,
@@ -129,6 +130,9 @@ class RemoteBackend(LLMBackend):
         }
         if stop:
             payload["stop"] = stop
+        if json_mode:
+            # OpenAI 兼容的原生结构化输出：API 层保证返回合法 JSON
+            payload["response_format"] = {"type": "json_object"}
         try:
             with self._open(self._build_request(payload)) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
@@ -137,6 +141,30 @@ class RemoteBackend(LLMBackend):
         except urllib.error.URLError as e:
             raise RuntimeError(f"在线 API 连接失败：{e.reason}") from e
         return data["choices"][0]["message"]["content"] or ""
+
+    _json_mode_ok = True
+
+    def generate_json(self, messages: list[Message], *, max_tokens: int = 1024,
+                      temperature: float = 0.3) -> dict:
+        """结构化生成：优先接口原生 JSON 模式（API 层保证合法 JSON），
+        接口不支持（400）自动永久回落普通模式；最终兜底基类重试链。"""
+        # 1) 原生 JSON 模式
+        if self._json_mode_ok:
+            try:
+                text = self._generate_once(messages, max_tokens=max_tokens,
+                                           temperature=temperature, stop=None,
+                                           json_mode=True).strip()
+                if text:
+                    from .backend import repair_json
+                    return repair_json(text)
+            except urllib.error.HTTPError as e:
+                if e.code == 400:
+                    self._json_mode_ok = False   # 不支持 json_object，永久回落
+            except ValueError:
+                pass                              # 输出坏数据 → 走兜底重试链
+        # 2) 普通模式 + 基类三连重试（限额加码/提示修正）
+        return super().generate_json(messages, max_tokens=max_tokens,
+                                     temperature=temperature)
 
     def stream(self, messages: list[Message], *, max_tokens: int = 1024,
                temperature: float = 0.8, stop: list[str] | None = None) -> Iterator[str]:
