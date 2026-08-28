@@ -22,10 +22,10 @@
 
 ## 成品使用（重要）
 
-**打包产物**（在仓库外，不进 git）：`../AIStorySimulator-release/AIStorySimulator/`
+**打包产物**（gitignore，不进仓库树）：`dist/AIStorySimulator/`
 
 ```
-AIStorySimulator-release/
+dist/
 └─ AIStorySimulator/
    ├─ AIStorySimulator.exe      ← 双击开玩（窗口即游戏）
    ├─ models/    ← 模型（qwen3-1.7b-instruct-q4_k_m.gguf 约 1.1GB）
@@ -59,7 +59,7 @@ uv run python -m unittest discover -s tests    # 测试（110 项）
 cd web && npm install && npm run dev           # Vite 5173，/api 代理到 8765
 
 # 一键打包 EXE（前端需先 npm run build）
-uv run python build/make_exe.py
+uv run python build/make_exe.py   # 产物在 dist/AIStorySimulator/
 
 # 在线 API（任意 OpenAI 兼容接口；Ollama 等本机端点加 --allow-private-api）
 uv run story-sim demo --pack 凡人 --api-base https://api.xx.com/v1 --api-key sk-xxx --api-model xxx
@@ -88,7 +88,7 @@ models/           # GGUF 模型（gitignore，用 models fetch 下载）
 data/             # story_simulator.db（运行时生成）
 script/           # 剧本包素材（系统提示词文档，非小说）
 tests/            # 单元测试（110 项）
-dist/             # 本地构建输出（正式产物在仓库外 AIStorySimulator-release/）
+dist/             # 打包产物（gitignore，双击 dist/AIStorySimulator/AIStorySimulator.exe 即玩）
 ```
 
 ## 设计要点

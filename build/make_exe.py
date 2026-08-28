@@ -1,8 +1,8 @@
 """一键打包：pyinstaller spec + 把 models/ 与 script/ 放到 EXE 旁边。
 
 用法：uv run python build/make_exe.py
-产物输出在**仓库外**：../AIStorySimulator-release/AIStorySimulator/
-（打包产物不进仓库树，models/ script/ 紧邻 exe，用户可直接增删；data/ 运行时生成）
+产物输出在 dist/AIStorySimulator/（gitignore，不会进仓库树；
+models/ script/ 紧邻 exe，用户可直接增删；data/ 运行时生成）
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-DIST = REPO.parent / "AIStorySimulator-release" / "AIStorySimulator"
+DIST = REPO / "dist" / "AIStorySimulator"
 
 
 def link_or_copy(src: Path, dst: Path) -> None:
@@ -36,8 +36,8 @@ def main() -> int:
     print("== PyInstaller 打包 ==")
     r = subprocess.run(
         [sys.executable, "-m", "PyInstaller", "--noconfirm",
-         "--distpath", str(REPO.parent / "AIStorySimulator-release"),
-         # workpath（中间产物，含无依赖的裸 exe，双击会报缺 DLL）也放到仓库外，
+         "--distpath", str(REPO / "dist"),
+         # workpath（中间产物，含无依赖的裸 exe，双击会报缺 DLL）放独立子目录，
          # 防止与 build/ 里的正式脚本混在一起被误双击
          "--workpath", str(REPO / "build" / "_work"),
          str(REPO / "build" / "AIStorySimulator.spec")],
