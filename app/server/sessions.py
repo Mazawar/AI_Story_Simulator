@@ -14,7 +14,27 @@ from ..core.engine import DirectEngine
 
 log = logging.getLogger("story.play")
 log_adjudicate = logging.getLogger("story.adjudicate")
-log_adjudicate.setLevel(logging.INFO)
+
+
+def _setup_story_file_logging() -> None:
+    """导入即配置（幂等）：story.* 的日志全部进 data/play_errors.log。"""
+    root = logging.getLogger("story")
+    if any(isinstance(h, logging.FileHandler) for h in root.handlers):
+        return
+    root.setLevel(logging.INFO)
+    try:
+        from .. import config
+        config.ensure_runtime_dirs()
+        handler = logging.FileHandler(config.DATA_DIR / "play_errors.log",
+                                      encoding="utf-8")
+        fmt = "%(asctime)s" + chr(10) + "%(message)s"
+        handler.setFormatter(logging.Formatter(fmt))
+        root.addHandler(handler)
+    except Exception:
+        pass
+
+
+_setup_story_file_logging()
 
 
 class PlaySession:

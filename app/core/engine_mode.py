@@ -509,6 +509,21 @@ class EngineSession:
             if getattr(self.backend, "name", "") == "remote":
                 from ..server.routers import _REMOTE_FAIL_COUNT
                 _REMOTE_FAIL_COUNT["n"] += 1
+                # 连续 3 次失败 → 热切换本地模型接管推演（在线不稳的自动兜底）
+                if _REMOTE_FAIL_COUNT["n"] >= 3:
+                    try:
+                        from ..ai.local import LocalBackend
+                        from ..ai.router import resolve_model_file
+
+                        model_file = resolve_model_file(self.db)
+                        if model_file is not None:
+                            self.backend = LocalBackend(model_file, n_ctx=8192)
+                            _REMOTE_FAIL_COUNT["n"] = 0
+                            self.rolling_summary = (
+                                self.rolling_summary + "；" if self.rolling_summary else ""
+                            ) + "（在线推演不稳，已切换本地模型继续）"
+                    except Exception:
+                        pass
             # 裁决彻底失败（重试仍非法）：优雅降级为引擎旁白，不让回合卡死；
             # 失败根因必须留痕（data/play_errors.log）
             log.exception("裁决失败 turn=%s input=%r", turn, user_input[:60])
