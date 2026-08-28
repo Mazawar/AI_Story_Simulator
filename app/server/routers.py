@@ -99,12 +99,15 @@ def list_plays(request: Request):
     """最近的对局（续玩入口数据，含引擎/直通两种模式）。"""
     with _db(request).locked() as conn:
         rows = conn.execute(
-            "SELECT p.id, p.turn_count, p.updated_at, p.mode, s.title AS story_title,"
+            "SELECT id, turn_count, updated_at, mode, story_title, save_summary FROM ("
+            " SELECT p.id, p.turn_count, p.updated_at, p.mode, s.title AS story_title,"
             " (SELECT summary FROM saves WHERE playthrough_id = p.id"
-            "  ORDER BY updated_at DESC LIMIT 1) AS save_summary"
+            "  ORDER BY updated_at DESC LIMIT 1) AS save_summary,"
+            " ROW_NUMBER() OVER (PARTITION BY p.story_id ORDER BY p.updated_at DESC) AS rn"
             " FROM playthroughs p JOIN storys s ON s.id = p.story_id"
-            " WHERE p.turn_count > 0"
-            " ORDER BY p.updated_at DESC LIMIT 20"
+            " WHERE p.turn_count > 0)"
+            " WHERE rn = 1"
+            " ORDER BY updated_at DESC LIMIT 20"
         ).fetchall()
     return {"plays": [dict(r) for r in rows]}
 

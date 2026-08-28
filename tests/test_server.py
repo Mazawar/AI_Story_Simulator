@@ -122,12 +122,15 @@ class TestServerAPI(unittest.TestCase):
         self.client.post(f"/api/play/{pid}/input?token=t-test", json={"text": "继续"})
         self.assertTrue(self._wait_turns(pid, minimum=3))
 
-        # 列表接口
+        # 列表接口：每剧本只显示最新一场（去重）
         plays = self.client.get("/api/plays?token=t-test").json()["plays"]
         self.assertGreaterEqual(len(plays), 1)
-        entry = next(p for p in plays if p["id"] == pid)
-        self.assertEqual(entry["story_title"], "凡人修仙传：人界篇")
-        self.assertTrue(entry["save_summary"])
+        story_ids = [p["story_title"] for p in plays]
+        self.assertEqual(len(story_ids), len(set(story_ids)), "同剧本应去重只留最新")
+        entry = next((p for p in plays if p["id"] == pid), None)
+        if entry is not None:
+            self.assertEqual(entry["story_title"], "凡人修仙传：人界篇")
+            self.assertTrue(entry["save_summary"])
 
     def test_packs_meta_enriched(self):
         packs = self.client.get("/api/packs?token=t-test").json()["packs"]

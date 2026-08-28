@@ -74,15 +74,20 @@ export default function Library() {
           <h2 className="resume-title">未竟之局 · {plays.length}</h2>
           <div className="resume-strip">
             {plays.map((p) => (
-              <button key={p.id} className="resume-card" onClick={() => resume(p.story_title, p.id)}>
+              <div key={p.id} className="resume-card">
                 <div className="resume-card-top">
                   <span className="resume-card-badge">{p.mode === 'engine' ? '引擎' : '直通'}</span>
                   {p.save_summary && <span className="resume-card-saved">已存档</span>}
                 </div>
                 <div className="resume-card-title">{p.story_title}</div>
                 <div className="resume-card-meta">第 {p.turn_count} 回合 · {p.updated_at?.slice(5, 16)}</div>
-                <div className="resume-card-go">继续推演 →</div>
-              </button>
+                <div className="resume-card-actions">
+                  <button className="resume-btn primary"
+                          onClick={() => resume(p.story_title, p.id)}>继续推演</button>
+                  <button className="resume-btn"
+                          onClick={() => enter(p.story_title)}>全新开局</button>
+                </div>
+              </div>
             ))}
           </div>
         </section>

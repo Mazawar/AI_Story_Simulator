@@ -22,7 +22,7 @@
 
 * { box-sizing: border-box; }
 
-html, body { height: 100%; }
+html, body { height: 100%; overflow: hidden; }
 
 body {
   margin: 0;
@@ -132,7 +132,7 @@ body {
 
 /* ============ 游戏视图 ============ */
 
-.game { display: flex; flex-direction: column; height: 100vh; }
+.game { display: flex; flex-direction: column; height: 100vh; max-height: 100vh; overflow: hidden; }
 
 .game-header {
   display: flex; align-items: center; gap: 14px;
@@ -527,3 +527,16 @@ body {
 }
 .test-ok { background: rgba(143, 206, 136, 0.08); border: 1px solid rgba(143, 206, 136, 0.35); color: var(--jade); }
 .test-fail { background: rgba(217, 128, 128, 0.08); border: 1px solid rgba(217, 128, 128, 0.35); color: var(--danger); }
+
+.resume-card-actions { display: flex; gap: 8px; margin-top: 4px; }
+.resume-btn {
+  flex: 1; padding: 6px 0; border-radius: 8px; cursor: pointer;
+  font-size: 12.5px; letter-spacing: 1px;
+  background: var(--ink-1); border: 1px solid var(--line); color: var(--text-dim);
+}
+.resume-btn:hover { border-color: var(--jade); color: var(--jade); }
+.resume-btn.primary {
+  background: linear-gradient(135deg, var(--jade-deep), var(--jade));
+  border: none; color: #101408; font-weight: 600;
+}
+.resume-btn.primary:hover { filter: brightness(1.1); }
