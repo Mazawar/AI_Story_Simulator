@@ -86,6 +86,7 @@ export default function Game() {
   const [hudOpen, setHudOpen] = useState(true)
   const [panelWord, setPanelWord] = useState('状态')
   const [playerRole, setPlayerRole] = useState('')
+  const [backendName, setBackendName] = useState('')
   const [hud, setHud] = useState(null)   // 最新播报条字段 → 右上角悬浮卡
   const endRef = useRef(null)
   const openedRef = useRef(false)
@@ -135,6 +136,7 @@ export default function Game() {
         setPid(r.playthrough_id)
         if (r.panel_word) setPanelWord(r.panel_word)
         if (r.player_role) setPlayerRole(r.player_role)
+        setBackendName(r.backend)
 
         es = new EventSource(sseUrl(`/api/play/${r.playthrough_id}/events`))
         es.onopen = () => {
@@ -272,7 +274,9 @@ export default function Game() {
             <div className="opening-seal">命</div>
             <p className="opening-hint">{hint}</p>
             <p className="opening-sub">
-              本地模型首次推演需加载整卷剧本（约一至两分钟），后续回合会快得多
+              {backendName === 'remote'
+                ? '在线模型推演中，通常数十秒内完成'
+                : '本地模型首次推演需加载剧本（约一至两分钟），后续回合会快得多'}
             </p>
           </div>
         )}
