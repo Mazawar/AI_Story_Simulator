@@ -104,7 +104,7 @@ def list_plays(request: Request):
             "  ORDER BY updated_at DESC LIMIT 1) AS save_summary"
             " FROM playthroughs p JOIN storys s ON s.id = p.story_id"
             " WHERE p.turn_count > 0"
-            " ORDER BY p.updated_at DESC LIMIT 8"
+            " ORDER BY p.updated_at DESC LIMIT 20"
         ).fetchall()
     return {"plays": [dict(r) for r in rows]}
 

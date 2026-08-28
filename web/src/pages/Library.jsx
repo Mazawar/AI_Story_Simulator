@@ -71,19 +71,17 @@ export default function Library() {
 
       {plays.length > 0 && (
         <section className="resume-section">
-          <h2 className="resume-title">未竟之局</h2>
-          <div className="resume-list">
+          <h2 className="resume-title">未竟之局 · {plays.length}</h2>
+          <div className="resume-strip">
             {plays.map((p) => (
-              <button key={p.id} className="resume-card"
-                      onClick={() => resume(p.story_title, p.id)}>
-                <div className="resume-card-main">
-                  <span className="resume-card-title">{p.story_title}</span>
-                  <span className="resume-card-meta">
-                    第 {p.turn_count} 回合 · {p.updated_at}
-                    {p.save_summary ? ' · 已存档' : ''}
-                  </span>
+              <button key={p.id} className="resume-card" onClick={() => resume(p.story_title, p.id)}>
+                <div className="resume-card-top">
+                  <span className="resume-card-badge">{p.mode === 'engine' ? '引擎' : '直通'}</span>
+                  {p.save_summary && <span className="resume-card-saved">已存档</span>}
                 </div>
-                <StepForwardOutlined className="resume-card-icon" />
+                <div className="resume-card-title">{p.story_title}</div>
+                <div className="resume-card-meta">第 {p.turn_count} 回合 · {p.updated_at?.slice(5, 16)}</div>
+                <div className="resume-card-go">继续推演 →</div>
               </button>
             ))}
           </div>

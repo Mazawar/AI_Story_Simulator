@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections.abc import Iterator
 
@@ -30,6 +31,8 @@ from .rules import NumericState
 
 SUMMARY_EVERY = 10            # 每 N 回合滚动摘要一次
 SETTLEMENT_KEY = "last_settle_turn"
+
+log = logging.getLogger("story.adjudicate")
 
 # 身份关键词 → 剧本包身份线名（凡人包四选一）
 _IDENTITY_KEYWORDS = ("凡人", "散修", "宗门弟子", "家族子弟")
@@ -500,7 +503,9 @@ class EngineSession:
         try:
             data = self.backend.generate_json(messages, max_tokens=2000, temperature=0.8)
         except Exception:
-            # 裁决彻底失败（重试仍非法）：优雅降级为引擎旁白，不让回合卡死
+            # 裁决彻底失败（重试仍非法）：优雅降级为引擎旁白，不让回合卡死；
+            # 失败根因必须留痕（data/play_errors.log）
+            log.exception("裁决失败 turn=%s input=%r", turn, user_input[:60])
             note = ("命运的笔锋顿了顿——这一瞬世界没能推演下去。"
                     "换一种行动试试。")
             payload = TurnPayload(

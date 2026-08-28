@@ -321,14 +321,27 @@ body {
   font-family: var(--serif); font-size: 15px; letter-spacing: 4px;
   color: var(--gold); margin: 0 0 12px;
 }
-.resume-list { display: grid; gap: 10px; }
+.resume-strip {
+  display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 10px;
+  scroll-snap-type: x mandatory;
+}
+.resume-strip::-webkit-scrollbar { height: 8px; }
+.resume-strip::-webkit-scrollbar-thumb { background: var(--ink-3); border-radius: 4px; }
 .resume-card {
-  display: flex; align-items: center; justify-content: space-between; gap: 14px;
-  padding: 13px 18px; border-radius: 12px; cursor: pointer;
-  background: linear-gradient(90deg, rgba(216, 184, 120, 0.07), rgba(216, 184, 120, 0.02));
+  flex: none; width: 240px; scroll-snap-align: start;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 14px 16px; border-radius: 14px; cursor: pointer;
+  background: linear-gradient(160deg, rgba(216, 184, 120, 0.09), rgba(216, 184, 120, 0.02));
   border: 1px solid rgba(216, 184, 120, 0.3); color: var(--text);
   transition: all 0.15s; text-align: left;
 }
+.resume-card-top { display: flex; justify-content: space-between; align-items: center; }
+.resume-card-badge {
+  font-size: 11px; letter-spacing: 2px; color: var(--jade);
+  border: 1px solid rgba(143, 206, 136, 0.35); border-radius: 999px; padding: 1px 8px;
+}
+.resume-card-saved { font-size: 11px; color: var(--gold); }
+.resume-card-go { font-size: 12.5px; color: var(--gold); letter-spacing: 1px; margin-top: 2px; }
 .resume-card:hover { border-color: var(--gold); transform: translateX(3px); }
 .resume-card-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .resume-card-title {
