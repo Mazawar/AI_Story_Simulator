@@ -502,7 +502,13 @@ class EngineSession:
         )
         try:
             data = self.backend.generate_json(messages, max_tokens=2000, temperature=0.8)
+            if self.backend.name == "remote":
+                from ..server.routers import _REMOTE_FAIL_COUNT
+                _REMOTE_FAIL_COUNT["n"] = 0
         except Exception:
+            if getattr(self.backend, "name", "") == "remote":
+                from ..server.routers import _REMOTE_FAIL_COUNT
+                _REMOTE_FAIL_COUNT["n"] += 1
             # 裁决彻底失败（重试仍非法）：优雅降级为引擎旁白，不让回合卡死；
             # 失败根因必须留痕（data/play_errors.log）
             log.exception("裁决失败 turn=%s input=%r", turn, user_input[:60])

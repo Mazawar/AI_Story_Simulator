@@ -24,6 +24,8 @@ router = APIRouter()
 # 后端缓存：按上下文档位分开（剧本包提示词处理只付一次，KV 缓存跨对局复用）；
 # canned（缺模型回落）不缓存，便于用户放入模型后生效
 _BACKEND_CACHE: dict[int, LLMBackend] = {}
+_REMOTE_FAIL_COUNT = {"n": 0}          # 连续远程失败计数（≥3 自动回落本地）
+_LOCAL_FALLBACK_NOTE = {"shown": False}
 
 
 def _shared_backend(db, dry_run: bool, n_ctx: int) -> LLMBackend:
@@ -34,11 +36,12 @@ def _shared_backend(db, dry_run: bool, n_ctx: int) -> LLMBackend:
     cached = _BACKEND_CACHE.get(key)
     if cached is not None:
         return cached
-    # 在线优先设置生效时直接用远程（配置无效则回落本地，不让开局 500）
-    if (dao.settings.get_setting(db, "prefer_online") == "1"
-            and dao.settings.get_setting(db, "api_base_url")
-            and dao.settings.get_setting(db, "api_key")
-            and dao.settings.get_setting(db, "api_model")):
+    # 在线优先设置生效时直接用远程；连续失败 ≥3 自动回落本地
+    online_ready = (dao.settings.get_setting(db, "prefer_online") == "1"
+                    and dao.settings.get_setting(db, "api_base_url")
+                    and dao.settings.get_setting(db, "api_key")
+                    and dao.settings.get_setting(db, "api_model"))
+    if online_ready and _REMOTE_FAIL_COUNT["n"] < 3:
         try:
             backend = resolve_backend(db)
             if backend.name == "remote":
@@ -46,6 +49,7 @@ def _shared_backend(db, dry_run: bool, n_ctx: int) -> LLMBackend:
                 return backend
         except Exception as e:
             print(f"[router] 在线后端不可用，回落本地：{e}")
+            _REMOTE_FAIL_COUNT["n"] = 3
     model_file = resolve_model_file(db)
     if model_file is not None:
         try:

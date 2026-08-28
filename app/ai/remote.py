@@ -94,8 +94,33 @@ class RemoteBackend(LLMBackend):
         body = e.read().decode("utf-8", errors="replace")[:300]
         return RuntimeError(f"在线 API 返回 {e.code}：{body}")
 
+    def _is_retryable(self, e: Exception) -> bool:
+        import http.client
+
+        if isinstance(e, (urllib.error.URLError, socket.timeout, TimeoutError,
+                          http.client.RemoteDisconnected)):
+            return True
+        if isinstance(e, urllib.error.HTTPError) and e.code in (429, 500, 502, 503, 504):
+            return True
+        return False
+
     def generate(self, messages: list[Message], *, max_tokens: int = 1024,
                  temperature: float = 0.8, stop: list[str] | None = None) -> str:
+        """网络抖动/限流自动重试一次（退避 2 秒）。"""
+        import time as _time
+
+        for attempt in (1, 2):
+            try:
+                return self._generate_once(messages, max_tokens=max_tokens,
+                                           temperature=temperature, stop=stop)
+            except Exception as e:
+                if attempt == 1 and self._is_retryable(e):
+                    _time.sleep(2)
+                    continue
+                raise
+
+    def _generate_once(self, messages: list[Message], *, max_tokens: int,
+                       temperature: float, stop: list[str] | None) -> str:
         payload = {
             "model": self.model,
             "messages": messages,
