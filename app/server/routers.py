@@ -391,3 +391,74 @@ def test_settings(request: Request):
         return {"ok": True, "message": f"连通成功，模型回复：{text[:40]}"}
     except Exception as e:
         return {"ok": False, "message": str(e)[:200]}
+
+
+# ---- 模型下载（设置页） --------------------------------------------------------
+
+import threading as _threading
+
+_dl_state: dict = {"running": False, "key": "", "done": 0, "total": 0,
+                   "error": None, "file": ""}
+_dl_lock = _threading.Lock()
+
+
+def _preset_exists(key: str) -> dict:
+    from ..ai.downloader import PRESETS
+
+    preset = PRESETS.get(key)
+    if not preset:
+        return {"exists": False, "size": 0}
+    f = config.MODELS_DIR / preset["file"]
+    size = f.stat().st_size if f.is_file() else 0
+    return {"exists": size > 1024 * 1024, "size": size, "filename": preset["file"]}
+
+
+class DownloadReq(BaseModel):
+    key: str
+
+
+@router.get("/models/status")
+def models_status(request: Request):
+    from ..ai.downloader import PRESETS
+
+    with _dl_lock:
+        dl = dict(_dl_state)
+        if dl["running"] and dl["total"]:
+            dl["percent"] = int(dl["done"] * 100 / dl["total"])
+        else:
+            dl["percent"] = 100 if dl.get("finished") else 0
+    return {"download": dl,
+            "models": {k: _preset_exists(k) for k in PRESETS}}
+
+
+@router.post("/models/download")
+def models_download(request: Request, body: DownloadReq):
+    from ..ai import downloader
+
+    if body.key not in downloader.PRESETS:
+        raise HTTPException(status_code=400, detail=f"未知模型：{body.key}")
+    with _dl_lock:
+        if _dl_state["running"]:
+            return {"started": False, "message": "已有下载进行中", "state": dict(_dl_state)}
+        _dl_state.update(running=True, key=body.key, done=0, total=0,
+                         error=None, file=downloader.PRESETS[body.key]["file"],
+                         finished=False)
+
+    def _work() -> None:
+        try:
+            def cb(done: int, total: int) -> None:
+                with _dl_lock:
+                    _dl_state["done"] = done
+                    _dl_state["total"] = total
+            downloader.fetch(body.key, config.MODELS_DIR, progress_cb=cb)
+            with _dl_lock:
+                _dl_state["finished"] = True
+        except Exception as e:
+            with _dl_lock:
+                _dl_state["error"] = str(e)[:200]
+        finally:
+            with _dl_lock:
+                _dl_state["running"] = False
+
+    _threading.Thread(target=_work, daemon=True).start()
+    return {"started": True}

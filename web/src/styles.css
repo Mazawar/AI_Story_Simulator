@@ -567,3 +567,19 @@ body {
   border: none; color: #101408; font-weight: 600;
 }
 .resume-btn.primary:hover { filter: brightness(1.1); }
+
+.model-ready { color: var(--jade); font-size: 12.5px; margin: 6px 0 0; }
+.model-ready svg { margin-right: 4px; }
+.model-dl-btn {
+  margin-top: 6px; display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
+  background: rgba(216, 184, 120, 0.08); border: 1px solid rgba(216, 184, 120, 0.4);
+  color: var(--gold);
+}
+.model-dl-btn:hover { background: rgba(216, 184, 120, 0.16); }
+.model-dl-progress { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.model-dl-bar {
+  flex: 1; height: 8px; border-radius: 4px; background: var(--ink-1); overflow: hidden;
+}
+.model-dl-bar > div { height: 100%; background: linear-gradient(90deg, var(--jade-deep), var(--jade)); transition: width 0.4s; }
+.model-dl-progress span { font-size: 12px; color: var(--jade); min-width: 32px; }

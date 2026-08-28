@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Button, Input, Switch, message } from 'antd'
-import { ArrowLeftOutlined, ApiOutlined, SaveOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, ApiOutlined, SaveOutlined, DownloadOutlined, CheckCircleFilled } from '@ant-design/icons'
 import { api } from '../api.js'
 
 export default function Settings() {
   const [cfg, setCfg] = useState(null)
   const [apiKey, setApiKey] = useState('')
   const [saving, setSaving] = useState(false)
+  const [modelStatus, setModelStatus] = useState(null)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState(null)
 
@@ -18,6 +19,32 @@ export default function Settings() {
     }
   }
   useEffect(() => { load() }, [])
+
+  // 轮询模型/下载状态（下载进行中高频，空闲低频）
+  useEffect(() => {
+    let timer = null
+    const poll = async () => {
+      try {
+        const s = await api('/api/models/status')
+        setModelStatus(s)
+        timer = setTimeout(poll, s.download?.running ? 1200 : 6000)
+      } catch { timer = setTimeout(poll, 6000) }
+    }
+    poll()
+    return () => clearTimeout(timer)
+  }, [])
+
+  const downloadModel = async (key) => {
+    try {
+      await api('/api/models/download', { method: 'POST', body: JSON.stringify({ key }) })
+      message.info('开始下载（断点续传，关闭页面不中断）')
+    } catch (e) {
+      message.error('下载启动失败：' + (e.message || e))
+    }
+  }
+
+  const modelInfo = (key) => modelStatus?.models?.[key] || null
+  const dl = modelStatus?.download || {}
 
   const save = async () => {
     setSaving(true)
@@ -83,6 +110,13 @@ export default function Settings() {
             <div>
               <b>主力档 · Qwen3-1.7B</b>
               <p>速度快，推荐日常推演（无此模型文件时自动回落其它已放置模型）</p>
+              {(() => {
+                const info = modelInfo('qwen3-1.7b'); if (!info) return null
+                return info.exists
+                  ? <p className="model-ready"><CheckCircleFilled /> 已就绪 · {(info.size / 1048576 / 1024).toFixed(1)} GB</p>
+                  : <button className="model-dl-btn" onClick={(e) => { e.stopPropagation(); downloadModel('qwen3-1.7b') }}>
+                      <DownloadOutlined /> 下载模型（1.1 GB）</button>
+              })()}
             </div>
           </label>
           <label className="radio-opt">
@@ -90,7 +124,20 @@ export default function Settings() {
                    onChange={() => setCfg({ ...cfg, model_choice: '4b' })} />
             <div>
               <b>增强档 · Qwen3-4B</b>
-              <p>叙事质量更高；CPU 推理较慢（需已在 models/ 放置 4B 模型）</p>
+              <p>叙事质量更高；CPU 推理较慢</p>
+              {(() => {
+                const info = modelInfo('qwen3-4b'); if (!info) return null
+                return info.exists
+                  ? <p className="model-ready"><CheckCircleFilled /> 已就绪 · {(info.size / 1048576 / 1024).toFixed(1)} GB</p>
+                  : <button className="model-dl-btn" onClick={(e) => { e.stopPropagation(); downloadModel('qwen3-4b') }}>
+                      <DownloadOutlined /> 下载模型（2.5 GB）</button>
+              })()}
+              {dl.running && dl.key === 'qwen3-4b' && (
+                <div className="model-dl-progress">
+                  <div className="model-dl-bar"><div style={{ width: `${dl.percent}%` }} /></div>
+                  <span>{dl.percent}%</span>
+                </div>
+              )}
             </div>
           </label>
         </div>

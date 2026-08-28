@@ -72,7 +72,7 @@ def _safe_filename(raw: str) -> str:
     return name
 
 
-def _download_one(url: str, dest: Path) -> None:
+def _download_one(url: str, dest: Path, progress_cb=None) -> None:
     validate_endpoint(url)
     headers = {"User-Agent": "ai-story-simulator/0.1"}
     partial = dest.stat().st_size if dest.exists() else 0
@@ -97,7 +97,8 @@ def _download_one(url: str, dest: Path) -> None:
     print()
 
 
-def fetch(preset_or_url: str, models_dir: Path, *, name: str | None = None) -> Path:
+def fetch(preset_or_url: str, models_dir: Path, *, name: str | None = None,
+          progress_cb=None) -> Path:
     """下载预置模型或自定义 URL，返回目标文件路径。"""
     models_dir = Path(models_dir).resolve()
     models_dir.mkdir(parents=True, exist_ok=True)
@@ -121,7 +122,7 @@ def fetch(preset_or_url: str, models_dir: Path, *, name: str | None = None) -> P
         try:
             if dest.exists() and dest.stat().st_size > 0:
                 print(f"续传/重新下载：{dest.name}")
-            _download_one(url, dest)
+            _download_one(url, dest, progress_cb)
             if dest.stat().st_size < 1024 * 1024:
                 dest.unlink(missing_ok=True)
                 raise ValueError("下载结果异常（小于 1MB），可能源不可用")
