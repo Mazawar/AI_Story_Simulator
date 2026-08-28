@@ -235,9 +235,30 @@ class NumericState:
                 return res
         return None
 
-    def _register_resource(self, ref: str) -> dict:
-        """模型推演出配置外的新资源 → 动态注册（模拟人生式：世界数值体系
-        由 AI 在运行时定义、可生长），下次播报条即显示。"""
+    # 模型偶尔输出英文资源名（life/hp/money…）——归一到中文，映射不上的不上屏
+    _EN_REF_MAP = {
+        "life": "生命", "hp": "生命", "health": "生命",
+        "money": "金钱", "gold": "金钱", "coin": "金钱", "cash": "金钱",
+        "hunger": "饥饿", "thirst": "口渴", "mood": "心情", "stamina": "体力",
+        "energy": "体力", "sanity": "精神", "xp": "经验", "exp": "经验",
+        "level": "等级", "stress": "压力",
+    }
+
+    def _register_resource(self, ref: str) -> dict | None:
+        """模型推演出配置外的新资源 → 动态注册（世界数值体系由 AI 定义）。
+
+        纯英文名先走映射归一（life→生命）；映射不上的不上屏（防穿帮），
+        中文新资源照常注册进播报条。
+        """
+        ref = ref.strip()
+        if ref.isascii() and ref.isalpha():
+            mapped = self._EN_REF_MAP.get(ref.lower())
+            if not mapped:
+                return None
+            ref = mapped
+            existing = self._match_resource(ref)
+            if existing is not None:
+                return existing
         kind = "currency" if any(k in ref for k in ("石", "币", "钱", "金", "物资")) else "vital"
         res = {"ref": ref[:12], "init": 0, "kind": kind}
         self.resources.append(res)
@@ -279,6 +300,10 @@ class NumericState:
         if res is None:
             # 模型推演出配置外的新资源 → 动态注册接纳（世界由 AI 定义）
             res = self._register_resource(ref)
+            if res is None:
+                rejected.append({"effect": eff,
+                                 "why": f"未登记的数值项：{ref}（请用剧本中的中文名）"})
+                return
         self._apply_resource_delta(res, op, v, reason, eff, applied, rejected)
 
     def _apply_resource_delta(self, res: dict, op: str, v: float, reason: str,

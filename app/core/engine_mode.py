@@ -513,11 +513,15 @@ class EngineSession:
                 if 2 <= len(t) <= 24:
                     model_choices.append(t)
         deduped = list(dict.fromkeys(model_choices))[:4]
-        if len(deduped) >= 2:
-            final_choices = [{"id": chr(65 + i), "text": t, "tags": [], "hint": ""}
-                             for i, t in enumerate(deduped)]
-        else:
-            final_choices = self._engine_choices()
+        # 不足 4 个 → 状态机兜底补足（模型承诺恰好 4 个，缺了就补齐）
+        if len(deduped) < 4:
+            for c in self._engine_choices():
+                if c["text"] not in deduped:
+                    deduped.append(c["text"])
+                if len(deduped) >= 4:
+                    break
+        final_choices = [{"id": chr(65 + i), "text": t, "tags": [], "hint": ""}
+                         for i, t in enumerate(deduped[:4])]
 
         blocks = parse_narrative(narrative_text)
         blocks.append({"type": "broadcast", "fields": self.state.broadcast(applied)})
