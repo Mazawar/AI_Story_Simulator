@@ -34,15 +34,18 @@ def _shared_backend(db, dry_run: bool, n_ctx: int) -> LLMBackend:
     cached = _BACKEND_CACHE.get(key)
     if cached is not None:
         return cached
-    # 在线优先设置生效时直接用远程（失败由引擎优雅降级兜底）
+    # 在线优先设置生效时直接用远程（配置无效则回落本地，不让开局 500）
     if (dao.settings.get_setting(db, "prefer_online") == "1"
             and dao.settings.get_setting(db, "api_base_url")
             and dao.settings.get_setting(db, "api_key")
             and dao.settings.get_setting(db, "api_model")):
-        backend = resolve_backend(db)
-        if backend.name == "remote":
-            _BACKEND_CACHE[key] = backend
-            return backend
+        try:
+            backend = resolve_backend(db)
+            if backend.name == "remote":
+                _BACKEND_CACHE[key] = backend
+                return backend
+        except Exception as e:
+            print(f"[router] 在线后端不可用，回落本地：{e}")
     model_file = resolve_model_file(db)
     if model_file is not None:
         try:
@@ -340,6 +343,8 @@ def get_settings(request: Request):
 @router.post("/settings")
 def save_settings(request: Request, body: SettingsIn):
     db = _db(request)
+    # 任意在线配置/模型档位变更 → 丢弃后端缓存，新对局立即按新设置路由
+    _BACKEND_CACHE.clear()
     if body.api_base_url is not None:
         dao.settings.set_setting(db, "api_base_url", body.api_base_url.strip())
     if body.api_key:

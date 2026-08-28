@@ -170,11 +170,11 @@ def parse_world_materials(pack: Pack, *, limit: int = 40) -> list[dict]:
                         "底线", "身份", "修为", "时间流", "核心循环"):
                     continue
                 s_clean = s.replace("**", "")
-                m = re.match(r"^[-*·]\s*([^（（：:]{2,16})\s*[（:：]?(.*)$", s_clean)
+                m = re.match(r"^[-*·]\s*([^（（：:，。]{2,12})\s*[（:：]?(.*)$", s_clean)
                 if m:
                     title, desc = m.group(1).strip(), m.group(2).strip("（）()。")
                 else:
-                    title = s_clean.lstrip("-*· ").strip()[:16]
+                    continue          # 无标题形态的长叙述句不是素材
                 if (not title or len(title) < 2
                         or title.startswith(("我", "你", "玩家", "例如", "\"", "“"))
                         or "揭晓" in title or "真相" in s

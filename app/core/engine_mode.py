@@ -244,7 +244,7 @@ class EngineSession:
         """世界活性清单（标题级，防剧透）：让模型知道世界有什么将要发生。"""
         upcoming = [a["title"] for a in self.anchor_engine.anchors
                     if not a.get("is_triggered") and a["kind"] == "timeline"][:6]
-        pool = [m["title"] for m in self.materials[:8]]
+        pool = [m["title"] for m in self.materials if len(m["title"]) <= 10][:8]
         parts = []
         if upcoming:
             parts.append("大势将至：" + "、".join(upcoming))
@@ -654,11 +654,10 @@ class EngineSession:
             if nxt:
                 opts.append(f"设法{'' if len(nxt) > 3 else ''}{nxt}")
 
-        # 3) 世界素材：未消耗的最近条目（给方向不给剧透）
-        used = set(st.extra.get("used_events", []))
-        fresh = [m for m in self.materials if m["title"] not in used][:1]
-        if fresh:
-            opts.append(f"围绕「{fresh[0]['title']}」行动")
+        # 3) 剧情动向：当前幕的标题（章节卡已公开展示，非剧透）
+        if self.storyline:
+            beat_idx = min(int(st.extra.get("beat_idx", 0)), len(self.storyline) - 1)
+            opts.append(f"推动「{self.storyline[beat_idx]['title']}」的进展")
 
         # 4) 社交/地点向（随地点变化）
         where = st.location or "此地"

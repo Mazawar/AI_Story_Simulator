@@ -34,6 +34,16 @@ def main() -> int:
         return 1
 
     print("== PyInstaller 打包 ==")
+    # COLLECT 会清空 dist/AIStorySimulator/ 重建——先备份用户存档（data/）
+    backup = None
+    if DIST.exists():
+        user_data = DIST / "data"
+        if user_data.is_dir():
+            backup = REPO / "build" / "_data_backup"
+            if backup.exists():
+                shutil.rmtree(backup)
+            shutil.copytree(user_data, backup)
+            print(f"  已备份用户存档 → {backup.name}")
     r = subprocess.run(
         [sys.executable, "-m", "PyInstaller", "--noconfirm",
          "--distpath", str(REPO / "dist"),
@@ -57,6 +67,14 @@ def main() -> int:
                 if target.exists():
                     target.unlink()
                 link_or_copy(p, target)
+
+    # 恢复用户存档（PyInstaller 重建时被清掉）
+    if backup is not None and backup.is_dir():
+        dst_data = DIST / "data"
+        if dst_data.exists():
+            shutil.rmtree(dst_data)
+        shutil.copytree(backup, dst_data)
+        print("  已恢复用户存档（data/）")
 
     print(f"\n打包完成：{DIST / 'AIStorySimulator.exe'}")
     return 0

@@ -49,6 +49,10 @@ def validate_endpoint(base_url: str, *, allow_private: bool = False) -> str:
     if not allow_private:
         for info in infos:
             ip = ipaddress.ip_address(info[4][0])
+            # 198.18.0.0/15 是代理软件（Clash 等 fake-ip 模式）的合法出口段，
+            # 不属于 SSRF 防护目标（内网服务/云元数据），放行
+            if ip in ipaddress.ip_network("198.18.0.0/15"):
+                continue
             if (ip.is_private or ip.is_loopback or ip.is_link_local
                     or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
                 raise UnsafeAPIEndpointError(
