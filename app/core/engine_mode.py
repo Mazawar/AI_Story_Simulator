@@ -13,6 +13,7 @@ import json
 import re
 from collections.abc import Iterator
 
+from .. import config
 from ..ai.backend import LLMBackend
 from ..ai.context_assembler import assemble_messages, estimate_tokens, summarize_turns
 from ..db import dao
@@ -150,6 +151,7 @@ class EngineSession:
                     turn_idx=self.turn_idx + 1,
                     narrative=[_panel_block("修士面板", self.state.panel_cultivator())],
                     system_note="修士面板（引擎实时数据）", panel="cultivator",
+                    choices=self._engine_choices(),
                 )
             yield ("note", self._emit(payload, player_input=stripped))
             return
@@ -260,12 +262,21 @@ class EngineSession:
         return meta if isinstance(meta, dict) and meta.get("source") == "profile" else None
 
     def _schedule_profile_generation(self) -> None:
-        """后台 AI 通读剧本生成配置：完成前用兜底 schema 先行，写库后下一局生效。"""
+        """后台 AI 通读剧本生成配置：用独立模型实例（不占回合推理的实例锁，
+        否则回合会被阻塞数分钟）；生成完释放内存，写库后下一局生效。"""
         import threading
 
         def _work() -> None:
+            backend = None
             try:
-                profile = build_pack_profile(self.pack, self.backend)
+                from ..ai.local import LocalBackend
+                from ..ai import find_model_file
+
+                model_file = find_model_file(config.MODELS_DIR)
+                if model_file is None:
+                    return
+                backend = LocalBackend(model_file, n_ctx=16384)
+                profile = build_pack_profile(self.pack, backend)
                 if not profile or self.story_id is None:
                     return
                 with self.db.locked() as conn:
@@ -279,6 +290,8 @@ class EngineSession:
                       f"{len(profile.get('panels', []))} 面板)")
             except Exception as e:  # 后台生成失败不致命，兜底 schema 继续玩
                 print(f"[profile] 生成失败（将沿用兜底配置）：{e}")
+            finally:
+                del backend   # 释放第二个实例的内存
 
         threading.Thread(target=_work, daemon=True).start()
 
@@ -316,6 +329,7 @@ class EngineSession:
             narrative=[{"type": "panel", "title": panel.get("title", "状态"),
                         "fields": fields}],
             system_note="面板（剧本配置定义 · 引擎实时数据）", panel="cultivator",
+            choices=self._engine_choices(),
         )
 
     def _sync_identity_flags(self) -> list[dict]:
@@ -367,7 +381,8 @@ class EngineSession:
 
         body = [{"type": "panel", "title": "提示面板", "fields": rows}]
         return TurnPayload(turn_idx=self.turn_idx + 1, narrative=body,
-                           system_note="提示面板（引擎实时数据）", panel="hints")
+                           system_note="提示面板（引擎实时数据）", panel="hints",
+                           choices=self._engine_choices())
 
     def _tasks_panel(self) -> TurnPayload:
         self._sync_identity_flags()
@@ -386,7 +401,8 @@ class EngineSession:
                 ],
             }]
             return TurnPayload(turn_idx=self.turn_idx + 1, narrative=body,
-                               system_note="任务面板（引擎实时数据）", panel="tasks")
+                               system_note="任务面板（引擎实时数据）", panel="tasks",
+                               choices=self._engine_choices())
 
         flags = self.state.flags
         done_next = None
@@ -435,7 +451,7 @@ class EngineSession:
             world_agenda=self._world_agenda(),
         )
         try:
-            data = self.backend.generate_json(messages, max_tokens=900, temperature=0.8)
+            data = self.backend.generate_json(messages, max_tokens=2000, temperature=0.8)
         except Exception:
             # 裁决彻底失败（重试仍非法）：优雅降级为引擎旁白，不让回合卡死
             note = ("命运的笔锋顿了顿——这一瞬世界没能推演下去。"
@@ -605,6 +621,7 @@ class EngineSession:
             narrative=[{"type": "panel", "title": "本章结算",
                         "fields": [{"label": f"第{last + 1}-{self.turn_idx}回合", "value": s} for s in lines]}],
             system_note="本章已结算", panel="settlement",
+            choices=self._engine_choices(),
         ), player_input="本章结束")
 
     # ---- 存档 ----------------------------------------------------------------

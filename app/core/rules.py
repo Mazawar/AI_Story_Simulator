@@ -196,6 +196,9 @@ class NumericState:
     # ---- 裁决执行 ----------------------------------------------------------------
 
     def apply_effects(self, effects: list[dict]) -> tuple[list[dict], list[dict]]:
+        """执行模型声明的世界变化。引擎是记录员而非裁判：
+        资源可由模型在推演中动态新增（模拟人生式——世界由 AI 定义），
+        引擎只守数值边界（非负/上限）与货币类防刷节奏。"""
         applied: list[dict] = []
         rejected: list[dict] = []
         for eff in effects or []:
@@ -232,6 +235,15 @@ class NumericState:
                 return res
         return None
 
+    def _register_resource(self, ref: str) -> dict:
+        """模型推演出配置外的新资源 → 动态注册（模拟人生式：世界数值体系
+        由 AI 在运行时定义、可生长），下次播报条即显示。"""
+        kind = "currency" if any(k in ref for k in ("石", "币", "钱", "金", "物资")) else "vital"
+        res = {"ref": ref[:12], "init": 0, "kind": kind}
+        self.resources.append(res)
+        self.attrs.setdefault(res["ref"], 0.0)
+        return res
+
     def _apply_delta(self, eff: dict, applied: list, rejected: list) -> None:
         ref, op, v = str(eff["ref"]), str(eff["op"]), eff["v"]
         try:
@@ -245,11 +257,7 @@ class NumericState:
             rejected.append({"effect": eff, "why": "寿元由境界与时间事件驱动，禁止直接修改"})
             return
 
-        res = self._match_resource(ref)
-        if res is not None:
-            self._apply_resource_delta(res, op, v, reason, eff, applied, rejected)
-            return
-
+        # 境界轴的修为走专属进度通道（100 满升层）；其余一切数值由模型动态定义
         if ref == "修为" and self.realms:
             if op == "+" and v > 0:
                 if self.gain_log[-_GAIN_WINDOW:].count("修为") >= _MAX_PROGRESS_GAINS_IN_WINDOW:
@@ -267,7 +275,11 @@ class NumericState:
             applied.append({"ref": "修为", "op": op, "v": v, "reason": reason})
             return
 
-        rejected.append({"effect": eff, "why": f"未知数值项：{ref}"})
+        res = self._match_resource(ref)
+        if res is None:
+            # 模型推演出配置外的新资源 → 动态注册接纳（世界由 AI 定义）
+            res = self._register_resource(ref)
+        self._apply_resource_delta(res, op, v, reason, eff, applied, rejected)
 
     def _apply_resource_delta(self, res: dict, op: str, v: float, reason: str,
                               eff: dict, applied: list, rejected: list) -> None:

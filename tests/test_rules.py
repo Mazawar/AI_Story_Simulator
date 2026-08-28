@@ -39,10 +39,15 @@ class TestApplyEffects(unittest.TestCase):
         st.apply_effects([{"ref": "灵石", "op": "-", "v": 99, "reason": "买法宝"}])
         self.assertEqual(st.stones, 10, "灵石不足应整条拒收，状态不变")
 
-    def test_unknown_ref_rejected(self):
+    def test_new_resource_dynamically_registered(self):
+        """模型发明的新数值 → 引擎动态注册（模拟人生式世界生长）。"""
         st = new_state()
-        _, rejected = st.apply_effects([{"ref": "战斗力", "op": "+", "v": 5, "reason": "x"}])
-        self.assertEqual(len(rejected), 1)
+        applied, rejected = st.apply_effects(
+            [{"ref": "体力", "op": "+", "v": 20, "reason": "充分休息"}])
+        self.assertEqual(rejected, [])
+        self.assertEqual(st.attrs.get("体力"), 20.0)
+        fields = {f["label"] for f in st.broadcast()}
+        self.assertIn("体力", fields, "新资源应出现在播报条")
 
     def test_stone_gain_clamped(self):
         st = new_state()

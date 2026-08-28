@@ -204,6 +204,13 @@ export default function Game() {
 
   const hint = WAITING_HINTS[Math.min(Math.floor(elapsed / 8), WAITING_HINTS.length - 1)]
   const entities = meta?.characters || []
+  // 只有最新一批选项可点：历史选项置灰，防止点旧选项扰乱剧情
+  const lastChoicesIdx = (() => {
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      if (blocks[i].type === 'choices') return i
+    }
+    return -1
+  })()
 
   if (error) {
     return (
@@ -253,7 +260,8 @@ export default function Game() {
 
         {blocks.map((b, i) => (
           <BlockView key={i} block={b} entities={entities}
-                     onChoice={busy ? null : (opt) => send(opt.text)} />
+                     onChoice={(!busy && i === lastChoicesIdx)
+                       ? (opt) => send(opt.text) : null} />
         ))}
         <StreamView text={stream} />
         {busy && !stream && !empty && (
