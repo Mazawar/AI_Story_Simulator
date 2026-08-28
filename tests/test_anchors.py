@@ -5,7 +5,7 @@ from pathlib import Path
 
 from app.core.anchors import AnchorEngine, eval_condition
 from app.pack import load_packs
-from app.pack.anchors import parse_anchors, parse_identity_lines
+from app.pack.anchors import parse_anchors, parse_identity_lines, parse_random_events
 from app.pack.numeric import parse_numeric_schema
 from app.core.rules import NumericState
 
@@ -43,6 +43,16 @@ class TestParseAnchors(unittest.TestCase):
         self.assertIn("凡人", identities)
         fanren = next(l for l in lines if l["identity"] == "凡人")
         self.assertGreaterEqual(len(fanren["nodes"]), 4)
+
+    def test_random_events_pool(self):
+        events = parse_random_events(FANREN)
+        self.assertGreaterEqual(len(events), 8, "凡人包应有约 10 条随机事件")
+        titles = [e["title"] for e in events]
+        self.assertIn("坊市淘宝", titles)
+        self.assertIn("拍卖会", titles)
+        self.assertTrue(all(e["desc"] for e in events))
+        # 无事件池的包返回空
+        self.assertEqual(parse_random_events(JIANLAI), [])
 
 
 class TestConditionEval(unittest.TestCase):

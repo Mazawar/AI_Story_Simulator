@@ -1,9 +1,10 @@
 """引擎模式数值状态机与裁决执行（DESIGN.md §9）。
 
-NumericState：玩家状态的唯一权威，序列化存 playthroughs.player_json。
-apply_effects：LLM 裁决的白名单执行器——只认 delta/item/flag/anchor 四类指令，
-边界校验（寿元禁改、灵石非负）、防刷子衰减（同来源收益递减）、
-境界时间流（修为满→升层扣年，大境界突破扣年+寿元上限跃升）。
+题材无关：数值白名单由剧本包 schema 声明的 resources 驱动——
+修仙包（境界轴+灵石）、末日包（生命）、武侠包（生命）共用同一状态机；
+LLM 只能对声明过的资源申请增减，引擎负责边界与节奏。
+
+NumericState 是玩家状态的唯一权威，序列化存 playthroughs.player_json。
 """
 
 from __future__ import annotations
@@ -11,53 +12,70 @@ from __future__ import annotations
 import re
 
 # 防刷子：同一 (ref + 理由关键词) 连续命中的衰减
-_DECAY_START = 3          # 第 3 次起开始衰减
+_DECAY_START = 3
 _DECAY_FACTOR = 0.5
-# 单笔钳制：防模型一主观"天赐机缘"发巨款
-_MAX_STONE_GAIN = 30
+# 单笔钳制与滚窗限流（仅作用于 kind=currency 的资源，打破"每轮捡钱"循环）
+_MAX_CURRENCY_GAIN = 30
 _MAX_ITEM_COUNT = 9
-# 滚动限流：最近 N 条已应用效果中同 ref 增益次数达到上限即拒收新增益
 _GAIN_WINDOW = 8
-_MAX_STONE_GAINS_IN_WINDOW = 2
+_MAX_GAINS_IN_WINDOW = 2
 _MAX_PROGRESS_GAINS_IN_WINDOW = 3
 
 _REASON_STRIP_RE = re.compile(r"[\d０-９\s.,，。;；]+")
 
-_CURRENCY_REFS = ("灵石", "灵石(下品)", "下品灵石")
-
 
 def _reason_key(reason: str) -> str:
-    """理由归一化（去数字/空白）作为防刷子的来源指纹。"""
     return _REASON_STRIP_RE.sub("", reason)[:24]
 
 
 class NumericState:
-    """玩家数值状态。state_dict 可整体 round-trip（存档/续玩）。"""
+    """玩家数值状态。state_dict 可整体 round-trip（存档/续玩）。
+
+    schema.realms 非空 → 境界轴（境界/修为/寿元）启用；
+    schema.resources → 自由资源（生命/灵石/物资…），delta 白名单来源。
+    """
 
     def __init__(self, schema: dict, state: dict | None = None):
         self.schema = schema
-        self.realms = schema["realms"]
+        self.realms = schema.get("realms") or []
+        self.resources = schema.get("resources") or [
+            {"ref": "生命", "init": 100, "max": 100, "kind": "vital"}]
         s = state or {}
+
+        self.attrs: dict[str, float] = dict(s.get("attrs", {}))
+        for res in self.resources:                       # 新资源补默认值
+            self.attrs.setdefault(res["ref"], float(res.get("init", 0)))
+
         self.realm_index: int = s.get("realm_index", 0)
-        self.stage_index: int = s.get("stage_index", 0)        # 层或初中后期下标
-        self.age: float = s.get("age", 17.0)                   # 已活岁数（寿元流逝）
-        self.stones: int = s.get("stones", 0)                  # 下品灵石
-        self.progress: float = s.get("progress", 0.0)          # 修为进度（0-100）
-        self.spirit: str = s.get("spirit", "")                 # 灵根
+        self.stage_index: int = s.get("stage_index", 0)
+        self.age: float = s.get("age", 0.0)              # 已活岁数（有寿元轴才有意义）
+        self.progress: float = s.get("progress", 0.0)    # 修为进度（有境界轴才有意义）
+        self.spirit: str = s.get("spirit", "")
         self.location: str = s.get("location", "")
         self.name: str = s.get("name", "")
-        self.inventory: list[dict] = s.get("inventory", [])    # [{name,count,note}]
+        self.inventory: list[dict] = s.get("inventory", [])
         self.flags: dict[str, bool] = s.get("flags", {})
         self.decay_counter: dict[str, int] = s.get("decay_counter", {})
-        self.gain_log: list[str] = s.get("gain_log", [])       # 近期增益记录 ["灵石","修为"...]
+        self.gain_log: list[str] = s.get("gain_log", [])
         self.extra: dict = s.get("extra", {})
+
+        # 兼容旧字段：灵石（修仙包 currency 资源）
+        self._currency_ref = next(
+            (r["ref"] for r in self.resources if r.get("kind") == "currency"), None)
+
+    # ---- 兼容属性 ---------------------------------------------------------------
+
+    @property
+    def stones(self) -> float:
+        return self.attrs.get(self._currency_ref, 0) if self._currency_ref else 0
 
     # ---- 序列化 ---------------------------------------------------------------
 
     def to_dict(self) -> dict:
         return {
+            "attrs": self.attrs,
             "realm_index": self.realm_index, "stage_index": self.stage_index,
-            "age": self.age, "stones": self.stones, "progress": self.progress,
+            "age": self.age, "progress": self.progress,
             "spirit": self.spirit, "location": self.location, "name": self.name,
             "inventory": self.inventory, "flags": self.flags,
             "decay_counter": self.decay_counter, "gain_log": self.gain_log[-_GAIN_WINDOW:],
@@ -72,14 +90,22 @@ class NumericState:
         st.spirit = spirit
         st.location = location
         st.name = name
-        st.age = age if age is not None else 17.0
-        st.stones = starting_stones
+        if st.realms:
+            st.age = age if age is not None else 17.0
+        if starting_stones and st._currency_ref:
+            st.attrs[st._currency_ref] = float(starting_stones)
         return st
 
     # ---- 展示 -----------------------------------------------------------------
 
     @property
+    def has_realm_axis(self) -> bool:
+        return bool(self.realms)
+
+    @property
     def realm_name(self) -> str:
+        if not self.realms:
+            return ""
         r = self.realms[self.realm_index]
         if isinstance(r["stages"], list):
             return f"{r['name']}{r['stages'][self.stage_index]}期"
@@ -87,27 +113,38 @@ class NumericState:
 
     @property
     def realm_short(self) -> str:
-        return self.realms[self.realm_index]["name"]
+        return self.realms[self.realm_index]["name"] if self.realms else ""
 
     @property
     def lifespan_cap(self) -> int:
-        caps = self.schema.get("lifespan_caps", {})
-        return caps.get(self.realm_short, 100)
+        return (self.schema.get("lifespan_caps") or {}).get(self.realm_short, 100)
 
     @property
     def lifespan_left(self) -> float:
+        if not self.realms:
+            return 0.0
         return max(0.0, self.lifespan_cap - self.age)
 
+    def _fmt_value(self, ref: str) -> str:
+        v = self.attrs.get(ref, 0)
+        return f"{int(v)}" if float(v).is_integer() else f"{v:g}"
+
     def broadcast(self, changes: list[dict] | None = None) -> list[dict]:
-        """播报条字段（引擎真数据；变化项显示 旧→新）。"""
-        changed_refs = {c["ref"] for c in (changes or [])}
-        fields = [
-            {"label": "境界",
-             "value": self.realm_name + (f"（{self._fmt_old(changes, '境界')}→）" if "境界" in changed_refs else "")},
-            {"label": "寿元", "value": f"{self.lifespan_left:.0f}年"},
-            {"label": "灵石", "value": f"{self.stones:g}块"},
-            {"label": "地点", "value": self.location or "—"},
-        ]
+        """播报条字段（引擎真数据）：全部声明资源 + 地点（境界变化显示 旧→新）。"""
+        changes = changes or []
+        changed_refs = {c["ref"] for c in changes}
+        fields: list[dict] = []
+        if self.realms:
+            old = self._fmt_old(changes, "境界")
+            fields.append({"label": "境界",
+                           "value": self.realm_name + (f"（{old}→）" if old and "境界" in changed_refs else "")})
+            fields.append({"label": "寿元", "value": f"{self.lifespan_left:.0f}年"})
+        for res in self.resources:
+            ref = res["ref"]
+            old = self._fmt_old(changes, ref)
+            suffix = f"（{old}→）" if old and res.get("kind") == "currency" else ""
+            fields.append({"label": ref, "value": self._fmt_value(ref) + suffix})
+        fields.append({"label": "地点", "value": self.location or "—"})
         return fields
 
     @staticmethod
@@ -118,31 +155,35 @@ class NumericState:
         return ""
 
     def panel_cultivator(self) -> dict:
-        """修士面板数据（触发词「修士」由引擎直接产出）。"""
-        return {
-            "名字": self.name or "（未定）", "境界": self.realm_name,
-            "灵根": self.spirit or "—", "寿元": f"{self.lifespan_left:.0f}年",
-            "灵石": f"{self.stones:g}块", "地点": self.location or "—",
-            "修为": f"{self.progress:.0f}/100",
-            "物品": [f"{i['name']}×{i.get('count', 1)}" for i in self.inventory][:5] or ["无"],
-        }
+        """状态面板数据（触发词触发，引擎真数据）。"""
+        data: dict = {"名字": self.name or "（未定）"}
+        if self.realms:
+            data["境界"] = self.realm_name
+            data["寿元"] = f"{self.lifespan_left:.0f}年"
+            data["修为"] = f"{self.progress:.0f}/100"
+            if self.spirit:
+                data["灵根"] = self.spirit
+        for res in self.resources:
+            data[res["ref"]] = self._fmt_value(res["ref"]) + \
+                (f"/{res['max']}" if res.get("max") else "")
+        data["地点"] = self.location or "—"
+        data["物品"] = [f"{i['name']}×{i.get('count', 1)}" for i in self.inventory][:5] or ["无"]
+        return data
 
-    # ---- 境界与时间流 ------------------------------------------------------------
+    # ---- 境界与时间流（境界轴存在时） ----------------------------------------------
 
     def _advance_stage(self) -> bool:
-        """修为满 → 升一层（练气系）或推进初中后期；大境界突破由锚点/事件驱动。"""
         r = self.realms[self.realm_index]
         stages = r["stages"]
         limit = stages if isinstance(stages, int) else len(stages)
         if self.stage_index + 1 < limit:
             self.stage_index += 1
-            self.age += self.schema.get("layer_cost_years", 1)
+            self.age += self.schema.get("layer_cost_years", 1) or 1
             self.progress = 0.0
             return True
         return False
 
     def realm_breakthrough(self) -> bool:
-        """大境界突破：扣年 + 寿元上限跃升 + 修为清零（须由锚点/事件触发）。"""
         if self.realm_index + 1 >= len(self.realms):
             return False
         self.realm_index += 1
@@ -155,7 +196,6 @@ class NumericState:
     # ---- 裁决执行 ----------------------------------------------------------------
 
     def apply_effects(self, effects: list[dict]) -> tuple[list[dict], list[dict]]:
-        """执行白名单裁决。返回 (已应用的 deltas, 被拒指令及原因)。"""
         applied: list[dict] = []
         rejected: list[dict] = []
         for eff in effects or []:
@@ -166,14 +206,6 @@ class NumericState:
                 self._apply_delta(eff, applied, rejected)
             elif "item" in eff:
                 self._apply_item(eff, applied, rejected)
-            elif "flag" in eff:
-                self.flags[str(eff["flag"])] = str(eff.get("value", "true")).lower() != "false"
-                applied.append({"ref": f"flag:{eff['flag']}", "op": "=", "v": 1,
-                                "reason": eff.get("note", "")})
-            elif "anchor" in eff:
-                # 锚点触发请求：记录待 M3 锚点系统求值，这里透传
-                applied.append({"ref": f"anchor:{eff['anchor']}", "op": "=", "v": 1,
-                                "reason": "锚点触发请求"})
             elif "location" in eff:
                 loc = str(eff.get("location", "")).strip()[:12]
                 if not loc:
@@ -183,9 +215,22 @@ class NumericState:
                     self.location = loc
                     applied.append({"ref": "地点", "op": "=", "v": 1,
                                     "reason": f"{old or '未知'} → {loc}"})
+            elif "flag" in eff:
+                self.flags[str(eff["flag"])] = str(eff.get("value", "true")).lower() != "false"
+                applied.append({"ref": f"flag:{eff['flag']}", "op": "=", "v": 1,
+                                "reason": eff.get("note", "")})
+            elif "anchor" in eff:
+                applied.append({"ref": f"anchor:{eff['anchor']}", "op": "=", "v": 1,
+                                "reason": "锚点触发请求"})
             else:
                 rejected.append({"effect": eff, "why": "未知指令类型"})
         return applied, rejected
+
+    def _match_resource(self, ref: str) -> dict | None:
+        for res in self.resources:
+            if res["ref"] in ref or ref in res["ref"]:
+                return res
+        return None
 
     def _apply_delta(self, eff: dict, applied: list, rejected: list) -> None:
         ref, op, v = str(eff["ref"]), str(eff["op"]), eff["v"]
@@ -200,73 +245,81 @@ class NumericState:
             rejected.append({"effect": eff, "why": "寿元由境界与时间事件驱动，禁止直接修改"})
             return
 
-        if "修为" in ref:
-            delta = v if op == "+" else -v
+        res = self._match_resource(ref)
+        if res is not None:
+            self._apply_resource_delta(res, op, v, reason, eff, applied, rejected)
+            return
+
+        if ref == "修为" and self.realms:
             if op == "+" and v > 0:
-                recent = self.gain_log[-_GAIN_WINDOW:]
-                if recent.count("修为") >= _MAX_PROGRESS_GAINS_IN_WINDOW:
+                if self.gain_log[-_GAIN_WINDOW:].count("修为") >= _MAX_PROGRESS_GAINS_IN_WINDOW:
                     rejected.append({"effect": eff, "why": "心浮气躁，一时再难寸进"})
                     return
                 self.gain_log.append("修为")
+            delta = v if op == "+" else -v
             new_progress = self.progress + delta
             if new_progress >= 100.0 and self._advance_stage():
-                self.progress = max(0.0, new_progress - 100.0)   # 溢出余量保留
-                applied.append({"ref": "境界", "op": "+", "v": 1, "reason": "修为圆满，推进一层"})
+                self.progress = max(0.0, new_progress - 100.0)
+                applied.append({"ref": "境界", "op": "+", "v": 1,
+                                "reason": "修为圆满，推进一层"})
             else:
                 self.progress = max(0.0, min(100.0, new_progress))
             applied.append({"ref": "修为", "op": op, "v": v, "reason": reason})
             return
 
-        if any(c in ref for c in _CURRENCY_REFS):
-            if op == "+" and v > 0:
-                # 滚动限流：近期进项太密 → 拒收（打破"每轮都在捡钱"循环）
-                recent = self.gain_log[-_GAIN_WINDOW:]
-                if recent.count("灵石") >= _MAX_STONE_GAINS_IN_WINDOW:
-                    rejected.append({"effect": eff,
-                                     "why": "近日财源已足，再有进项须待新的机缘"})
-                    return
-                if v > _MAX_STONE_GAIN:
-                    reason += f"（机缘过大，被世界规则压缩至{_MAX_STONE_GAIN}）"
-                    v = float(_MAX_STONE_GAIN)
-                self.gain_log.append("灵石")
-            key = _reason_key(reason)
-            if key and v > 0 and op == "+":
-                n = self.decay_counter.get(key, 0)
-                self.decay_counter[key] = n + 1
-                if n + 1 > _DECAY_START:
-                    factor = _DECAY_FACTOR ** (n + 1 - _DECAY_START)
-                    v = round(v * factor, 2)
-                    reason += "（重复收益递减）"
-            else:
-                # 支出/非常规来源也计数，防止"买卖倒腾"刷差价
-                k2 = _reason_key("支出" + reason)
-                self.decay_counter[k2] = self.decay_counter.get(k2, 0) + 1
-            delta = v if op == "+" else -v
-            if self.stones + delta < 0:
-                rejected.append({"effect": eff, "why": f"灵石不足（当前 {self.stones:g}）"})
-                return
-            self.stones = self.stones + delta                # 保持浮点，展示层取整
-            applied.append({"ref": "灵石", "op": op, "v": v, "reason": reason})
-            return
-
         rejected.append({"effect": eff, "why": f"未知数值项：{ref}"})
+
+    def _apply_resource_delta(self, res: dict, op: str, v: float, reason: str,
+                              eff: dict, applied: list, rejected: list) -> None:
+        ref, kind = res["ref"], res.get("kind", "vital")
+        cur = self.attrs.get(ref, float(res.get("init", 0)))
+        maximum = res.get("max")
+
+        if kind == "currency" and op == "+" and v > 0:
+            recent = self.gain_log[-_GAIN_WINDOW:]
+            if recent.count(ref) >= _MAX_GAINS_IN_WINDOW:
+                rejected.append({"effect": eff,
+                                 "why": f"近期{ref}进项已足，新的收获须待机缘"})
+                return
+            if v > _MAX_CURRENCY_GAIN:
+                reason += f"（机缘过大，被世界规则压缩至{_MAX_CURRENCY_GAIN}）"
+                v = float(_MAX_CURRENCY_GAIN)
+            self.gain_log.append(ref)
+            key = _reason_key(reason)
+            n = self.decay_counter.get(key, 0)
+            self.decay_counter[key] = n + 1
+            if n + 1 > _DECAY_START:
+                v = round(v * (_DECAY_FACTOR ** (n + 1 - _DECAY_START)), 2)
+                reason += "（重复收益递减）"
+        elif kind == "currency":
+            k2 = _reason_key("支出" + reason)
+            self.decay_counter[k2] = self.decay_counter.get(k2, 0) + 1
+
+        delta = v if op == "+" else -v
+        new_val = cur + delta
+        if new_val < 0:
+            rejected.append({"effect": eff, "why": f"{ref}不足（当前 {cur:g}）"})
+            return
+        if maximum is not None:
+            new_val = min(new_val, float(maximum))
+        self.attrs[ref] = new_val
+        applied.append({"ref": ref, "op": op, "v": v, "reason": reason, "old": f"{cur:g}"})
 
     def _apply_item(self, eff: dict, applied: list, rejected: list) -> None:
         name, action = str(eff["item"]), str(eff.get("action", "add"))
         note = str(eff.get("note", ""))
-        # note 里的数量提示（"数量 +2"）作为数量依据，缺省 ±1
         m = re.search(r"([+-－—]|±)\s*([0-9０-９]+)", note)
         count = abs(int(m.group(2).translate(str.maketrans("０１２３４５６７８９", "0123456789")))) if m else 1
         if action == "add":
             count = min(count, _MAX_ITEM_COUNT)
-        entry = next((i for i in self.inventory if i["name"] == name), None)
-        if action == "add":
+            entry = next((i for i in self.inventory if i["name"] == name), None)
             if entry:
                 entry["count"] = entry.get("count", 1) + count
             else:
                 self.inventory.append({"name": name, "count": count, "note": note})
             applied.append({"ref": f"item:{name}", "op": "+", "v": count, "reason": note})
         elif action == "remove":
+            entry = next((i for i in self.inventory if i["name"] == name), None)
             if not entry:
                 rejected.append({"effect": eff, "why": f"未持有：{name}"})
                 return

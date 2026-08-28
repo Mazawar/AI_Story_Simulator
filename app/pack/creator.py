@@ -13,8 +13,10 @@ from .models import Pack
 
 # 角色卡标题：【韩立 · 七玄门杂役出身，四灵根修士】（时间点B登场）
 _CARD_RE = re.compile(r"^【\s*([^【】·]+?)\s*·\s*([^【】]+?)\s*】")
-# 粗体变体：**陈平安 · 泥瓶巷孤儿（你的发小）**
+# 粗体变体1：**陈平安 · 泥瓶巷孤儿（你的发小）**
 _CARD_BOLD_RE = re.compile(r"^\*\*\s*([^*·【】]+?)\s*·\s*([^*]+?)\s*\*\*\s*$")
+# 粗体变体2（爱情公寓式）：**胡一菲**（大学老师·楼长·武力担当）
+_CARD_BOLD_PAREN_RE = re.compile(r"^\*\*\s*([^*【】]{1,12})\s*\*\*\s*[（(](.+?)[)）]\s*$")
 # 步骤标题：【第一步】你醒来在什么时候？
 _STEP_RE = re.compile(r"^【\s*第([一二三四五六七八九十\d]+)步\s*】\s*(.*)$")
 # 选项行：【A】七玄门时期——……（也兼容【A·xxx】）
@@ -33,9 +35,13 @@ def parse_character_cards(pack: Pack, limit: int = 40) -> list[dict]:
     for line in section.body.splitlines():
         s = line.strip()
         m = _CARD_RE.match(s) or _CARD_BOLD_RE.match(s)
-        if not m:
-            continue
-        name, desc = m.group(1).strip(), m.group(2).strip()
+        if m:
+            name, desc = m.group(1).strip(), m.group(2).strip()
+        else:
+            m2 = _CARD_BOLD_PAREN_RE.match(s)
+            if not m2:
+                continue
+            name, desc = m2.group(1).strip(), m2.group(2).strip()
         if name in _CARD_SKIP or len(name) > 12:
             continue
         if any(c["name"] == name for c in cards):

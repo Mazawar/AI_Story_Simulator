@@ -166,7 +166,7 @@ class TestRoundTrip(unittest.TestCase):
     def test_broadcast_real_data(self):
         st = new_state()
         fields = {f["label"]: f["value"] for f in st.broadcast()}
-        self.assertEqual(fields["灵石"], "10块")
+        self.assertEqual(fields["灵石"], "10")
         self.assertIn("练气", fields["境界"])
         self.assertIn("七玄门", fields["地点"])
 

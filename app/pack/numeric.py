@@ -42,21 +42,23 @@ def cn_num(s: str) -> int | None:
     return total + num
 
 
-# ---- 默认模板（无数值章节的包，如剑来） ----------------------------------------
-
-DEFAULT_SCHEMA = {
-    "realms": [
-        {"name": "练气", "stages": 9, "stage_label": "层"},
-        {"name": "筑基", "stages": ["初", "中", "后"]},
-        {"name": "结丹", "stages": ["初", "中", "后"]},
-        {"name": "元婴", "stages": ["初", "中", "后"]},
+# ---- 默认模板（无数值章节的包）：题材无关的通用资源 ----------------------------
+# 不再回退修仙模板——换任何剧本都不至于荒谬（末日包=生命，武侠=生命，
+# 资源细节由模型按剧本设定自行申请 delta，引擎按声明过的 resources 校验）
+GENERIC_SCHEMA = {
+    "source": "generic",
+    "realms": [],                                  # 无境界轴
+    "resources": [
+        {"ref": "生命", "init": 100, "max": 100, "kind": "vital"},
     ],
-    "lifespan_caps": {"练气": 100, "筑基": 200, "结丹": 500, "元婴": 1000},
-    "realm_breakthrough_cost_years": {"筑基": 10, "结丹": 30, "元婴": 80},
-    "layer_cost_years": 1,
-    "currency": {"name": "灵石", "denoms": ["下品", "中品", "上品"], "rate": 100},
-    "source": "default",
+    "lifespan_caps": {},
+    "realm_breakthrough_cost_years": {},
+    "layer_cost_years": 0,
+    "currency": {"name": "", "denoms": [], "rate": 1},
 }
+
+# 兼容别名（旧引用）
+DEFAULT_SCHEMA = GENERIC_SCHEMA
 
 # 境界轴（行式）：境界…：练气（十三层）→ 筑基（初/中/后期）→ …
 _REALM_LINE_RE = re.compile(r"境界[^：:\n]*[：:]\s*(.+)")
@@ -135,7 +137,7 @@ def parse_numeric_schema(pack: Pack) -> dict:
         if current:
             realms.append(current)
     if not realms:
-        return dict(DEFAULT_SCHEMA)
+        return dict(GENERIC_SCHEMA)
     schema["realms"] = realms
 
     # 寿元上限
@@ -145,7 +147,7 @@ def parse_numeric_schema(pack: Pack) -> dict:
         name = _clean_name(name)
         if v and name:
             caps[name] = v
-    schema["lifespan_caps"] = caps or dict(DEFAULT_SCHEMA["lifespan_caps"])
+    schema["lifespan_caps"] = caps or dict(GENERIC_SCHEMA["lifespan_caps"])
 
     # 突破扣年
     costs = {}
@@ -154,18 +156,22 @@ def parse_numeric_schema(pack: Pack) -> dict:
         if to:
             costs[to] = int(years)
     schema["realm_breakthrough_cost_years"] = costs
-
     # 每层扣年
     m = _LAYER_COST_RE.search(body)
     schema["layer_cost_years"] = int(m.group(1)) if m else 1
 
-    # 币制
-    currency = dict(DEFAULT_SCHEMA["currency"])
+    # 资源声明（引擎 delta 白名单与播报条数据源）：货币 → 资源；无货币 → 生命
+    currency = dict(GENERIC_SCHEMA["currency"])
     cm = _CURRENCY_RE.search(body)
     if cm:
         currency["denoms"] = [d for d in cm.group(1).split("/") if d.strip()]
         currency["rate"] = int(cm.group(2))
+        currency["name"] = "灵石"                     # 资源名取币种主名（denoms 为面额）
     schema["currency"] = currency
+    if currency["name"]:
+        schema["resources"] = [{"ref": currency["name"], "init": 0, "kind": "currency"}]
+    else:
+        schema["resources"] = [dict(GENERIC_SCHEMA["resources"][0])]
 
     # 灵根（数值节或创建步骤里出现的选项）
     spirits = list(dict.fromkeys(_SPIRIT_RE.findall(body)))

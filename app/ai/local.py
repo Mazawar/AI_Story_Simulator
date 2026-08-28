@@ -160,12 +160,13 @@ class LocalBackend(LLMBackend):
 
     def generate(self, messages: list[Message], *, max_tokens: int = 1024,
                  temperature: float = 0.8, stop: list[str] | None = None) -> str:
-        out = self.llm.create_chat_completion(
-            messages=prepare_messages(messages, no_think=self.no_think),
-            max_tokens=max_tokens,
-            temperature=temperature,
-            stop=stop or None,
-        )
+        with self._gen_lock:
+            out = self.llm.create_chat_completion(
+                messages=prepare_messages(messages, no_think=self.no_think),
+                max_tokens=max_tokens,
+                temperature=temperature,
+                stop=stop or None,
+            )
         return strip_think(out["choices"][0]["message"]["content"] or "")
 
     def generate_json(self, messages: list[Message], *, max_tokens: int = 1024,
@@ -175,14 +176,15 @@ class LocalBackend(LLMBackend):
         生成可能撞上 token 上限截断（narrative 过长）——先尝试截断抢救，
         失败则不带语法重生成一次（上限翻倍）。
         """
-        from .gbnf import salvage_adjudication, grammar_object
+        from .gbnf import grammar_object, salvage_adjudication
 
-        out = self.llm.create_chat_completion(
-            messages=prepare_messages(messages, no_think=self.no_think),
-            max_tokens=max_tokens,
-            temperature=temperature,
-            grammar=grammar_object(),
-        )
+        with self._gen_lock:
+            out = self.llm.create_chat_completion(
+                messages=prepare_messages(messages, no_think=self.no_think),
+                max_tokens=max_tokens,
+                temperature=temperature,
+                grammar=grammar_object(),
+            )
         content = strip_think(out["choices"][0]["message"]["content"] or "{}")
         try:
             return json.loads(content)
@@ -190,16 +192,17 @@ class LocalBackend(LLMBackend):
             salvaged = salvage_adjudication(content)
             if salvaged is not None:
                 return salvaged
-            out = self.llm.create_chat_completion(
-                messages=prepare_messages(
-                    messages[:-1]
-                    + [{"role": "user",
-                        "content": str(messages[-1]["content"]) +
-                        "\n\n（上一轮你的 JSON 因过长被截断。本轮 narrative 压缩到 40 字以内。）"}],
-                    no_think=self.no_think),
-                max_tokens=max_tokens * 2,
-                temperature=max(0.2, temperature - 0.3),
-            )
+            with self._gen_lock:
+                out = self.llm.create_chat_completion(
+                    messages=prepare_messages(
+                        messages[:-1]
+                        + [{"role": "user",
+                            "content": str(messages[-1]["content"]) +
+                            "\n\n（上一轮你的 JSON 因过长被截断。本轮 narrative 压缩到 40 字以内。）"}],
+                        no_think=self.no_think),
+                    max_tokens=max_tokens * 2,
+                    temperature=max(0.2, temperature - 0.3),
+                )
             content = strip_think(out["choices"][0]["message"]["content"] or "{}")
             salvaged = salvage_adjudication(content)
             if salvaged is not None:
@@ -208,21 +211,23 @@ class LocalBackend(LLMBackend):
 
     def stream(self, messages: list[Message], *, max_tokens: int = 1024,
                temperature: float = 0.8, stop: list[str] | None = None) -> Iterator[str]:
-        stream = self.llm.create_chat_completion(
-            messages=prepare_messages(messages, no_think=self.no_think),
-            max_tokens=max_tokens,
-            temperature=temperature,
-            stop=stop or None,
-            stream=True,
-        )
-        think_filter = _ThinkStreamFilter()
-        for chunk in stream:
-            delta = chunk["choices"][0].get("delta", {})
-            piece = delta.get("content")
-            if piece:
-                visible = think_filter.feed(piece)
-                if visible:
-                    yield visible
-        tail = think_filter.flush()
-        if tail:
-            yield tail
+        # 锁全程持有：流式期间同样不允许其它线程触碰 llama_context
+        with self._gen_lock:
+            stream = self.llm.create_chat_completion(
+                messages=prepare_messages(messages, no_think=self.no_think),
+                max_tokens=max_tokens,
+                temperature=temperature,
+                stop=stop or None,
+                stream=True,
+            )
+            think_filter = _ThinkStreamFilter()
+            for chunk in stream:
+                delta = chunk["choices"][0].get("delta", {})
+                piece = delta.get("content")
+                if piece:
+                    visible = think_filter.feed(piece)
+                    if visible:
+                        yield visible
+            tail = think_filter.flush()
+            if tail:
+                yield tail

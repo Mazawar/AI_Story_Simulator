@@ -37,7 +37,7 @@ class TestServerAPI(unittest.TestCase):
         r = self.client.get("/api/packs?token=t-test")
         self.assertEqual(r.status_code, 200)
         titles = [p["title"] for p in r.json()["packs"]]
-        self.assertEqual(len(titles), 3, "script/ 下应有三个剧本包")
+        self.assertGreaterEqual(len(titles), 4, "script/ 下应有至少四个剧本包")
 
     def test_play_flow_with_history(self):
         r = self.client.post("/api/play?token=t-test", json={"pack_title": "凡人"})

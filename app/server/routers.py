@@ -148,7 +148,8 @@ def resume_play(request: Request, playthrough_id: int):
     with db.locked() as conn:
         row = conn.execute(
             "SELECT p.id, p.turn_count, p.mode, p.player_json, p.rolling_summary,"
-            " s.title AS story_title, pk.raw_text AS pack_text, pk.file_path AS pack_file"
+            " s.title AS story_title, s.metadata_json,"
+            " pk.raw_text AS pack_text, pk.file_path AS pack_file"
             " FROM playthroughs p"
             " JOIN storys s ON s.id = p.story_id"
             " LEFT JOIN packs pk ON pk.id = s.source_pack_id"
@@ -184,13 +185,22 @@ def resume_play(request: Request, playthrough_id: int):
     mode = row["mode"] or "direct"
     if mode == "engine":
         from ..core.engine_mode import EngineSession
-        from ..pack.numeric import parse_numeric_schema
         from ..core.rules import NumericState
+        from ..pack.numeric import parse_numeric_schema
 
-        state = NumericState(parse_numeric_schema(pack),
+        # schema 来源优先 AI 剧本配置（storys.metadata_json），回退确定性解析
+        engine_schema = None
+        if row["metadata_json"]:
+            try:
+                meta = json.loads(row["metadata_json"])
+                if isinstance(meta, dict) and meta.get("source") == "profile":
+                    engine_schema = meta
+            except json.JSONDecodeError:
+                pass
+        state = NumericState(engine_schema or parse_numeric_schema(pack),
                              json.loads(row["player_json"]) if row["player_json"] else None)
         engine = EngineSession(db, _shared_backend(db, request.app.state.dry_run, 8192),
-                               pack, playthrough_id, state=state,
+                               pack, playthrough_id, state=state, schema=engine_schema,
                                rolling_summary=row["rolling_summary"] or "")
         REGISTRY.put(playthrough_id, PlaySession(engine))
         return {"playthrough_id": playthrough_id, "pack_title": pack.title,

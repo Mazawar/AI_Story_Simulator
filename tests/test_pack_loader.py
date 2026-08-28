@@ -43,12 +43,18 @@ class TestRealPacks(unittest.TestCase):
 
     EXPECTED_KEYS = {"world", "characters", "numeric", "output_format", "constraints", "opening"}
 
-    def test_three_packs_loaded(self):
+    def test_three_classic_packs_loaded(self):
         packs = load_packs(SCRIPT_DIR)
-        self.assertEqual(len(packs), 3, "script/ 下应有三个剧本包")
+        self.assertGreaterEqual(len(packs), 4, "script/ 下应有至少四个剧本包")
+        titles = " ".join(p.title for p in packs)
+        for frag in ("凡人修仙传", "剑来", "完美世界", "末日余生"):
+            self.assertIn(frag, titles)
 
     def test_sections_complete(self):
+        """九章节结构对经典三包验收；新形态包（如末日系统型）不要求。"""
         for pack in load_packs(SCRIPT_DIR):
+            if "末日" in pack.title:
+                continue
             with self.subTest(pack=pack.title):
                 keys = {s.key for s in pack.sections}
                 missing = self.EXPECTED_KEYS - keys

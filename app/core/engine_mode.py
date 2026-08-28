@@ -17,10 +17,11 @@ from ..ai.backend import LLMBackend
 from ..ai.context_assembler import assemble_messages, estimate_tokens, summarize_turns
 from ..db import dao
 from ..db.database import Database
-from ..pack.anchors import parse_anchors
+from ..pack.anchors import parse_anchors, parse_random_events, parse_world_materials
 from ..pack.creator import parse_character_cards
 from ..pack.models import Pack
 from ..pack.numeric import parse_numeric_schema
+from ..pack.profile import build_pack_profile
 from ..render.contract import TurnPayload, note_payload
 from ..render.narrative_parser import parse_narrative
 from .anchors import AnchorEngine
@@ -31,6 +32,9 @@ SETTLEMENT_KEY = "last_settle_turn"
 
 # 身份关键词 → 剧本包身份线名（凡人包四选一）
 _IDENTITY_KEYWORDS = ("凡人", "散修", "宗门弟子", "家族子弟")
+
+# 剧情停滞判定：连续 N 轮无任何新变化 → 引擎强制注入随机事件
+STALL_AFTER_TURNS = 2
 
 
 def _panel_block(title: str, data: dict) -> dict:
@@ -44,17 +48,32 @@ class EngineSession:
 
     def __init__(self, db: Database, backend: LLMBackend, pack: Pack,
                  playthrough_id: int, *, state: NumericState | None = None,
-                 rolling_summary: str = ""):
+                 rolling_summary: str = "", schema: dict | None = None):
         self.db = db
         self.backend = backend
         self.pack = pack
         self.playthrough_id = playthrough_id
-        self.schema = parse_numeric_schema(pack)
+        # 数值 schema 三级来源：
+        #   1) 显式传入（resume 时从 storys.metadata_json 读 AI 生成的 PackProfile）
+        #   2) storys.metadata_json 里已持久化的 profile
+        #   3) 确定性解析兜底（parse_numeric_schema → generic），
+        #      同时后台跑 AI 通读生成 profile，写库后下一局生效
+        self.story_id = self._resolve_story_id()
+        self.schema = schema or self._load_persisted_profile() or parse_numeric_schema(pack)
         self.characters = parse_character_cards(pack)
         self.anchor_engine = AnchorEngine(parse_anchors(pack))
 
         self.state = state or NumericState.new_game(self.schema)
         self.rolling_summary = rolling_summary
+        # 世界素材：全包 bullet 通用提取（事件池/NPC/探索条目通吃），大包用于
+        # "世界将发生之事"清单与停滞注入；小包全文注入时素材已在剧本原文里
+        self.random_events = parse_random_events(pack)
+        self.materials = parse_world_materials(pack) or [
+            {"group": "事件", "title": e["title"], "desc": e["desc"]}
+            for e in self.random_events]
+        # AI 生成的面板定义（profile.panels）；确定性兜底时为空
+        self.profile_panels: list[dict] = self.schema.get("panels") or []
+        self._profile_scheduled = False
         # 恢复锚点触发集
         triggered = set(self.state.extra.get("triggered_anchors", []))
         for a in self.anchor_engine.anchors:
@@ -125,24 +144,20 @@ class EngineSession:
             yield ("note", self._load("autosave"))
             return
         if stripped == "修士":
-            yield ("note", self._emit(TurnPayload(
-                turn_idx=self.turn_idx + 1,
-                narrative=[_panel_block("修士面板", self.state.panel_cultivator())],
-                system_note="修士面板（引擎实时数据）", panel="cultivator",
-            ), player_input=stripped))
+            payload = self._render_profile_panel()
+            if payload is None:
+                payload = TurnPayload(
+                    turn_idx=self.turn_idx + 1,
+                    narrative=[_panel_block("修士面板", self.state.panel_cultivator())],
+                    system_note="修士面板（引擎实时数据）", panel="cultivator",
+                )
+            yield ("note", self._emit(payload, player_input=stripped))
             return
         if stripped == "任务":
             yield ("note", self._emit(self._tasks_panel(), player_input=stripped))
             return
         if stripped == "提示":
-            fired = [a["title"] for a in self.anchor_engine.anchors if a.get("is_triggered")]
-            hints = [f"境界 {self.state.realm_name}，修为 {self.state.progress:.0f}/100"]
-            if self.state.progress >= 60:
-                hints.append("修将圆满，可考虑闭关突破")
-            if fired:
-                hints.append("已历事件：" + "、".join(fired[-3:]))
-            yield ("note", self._emit(note_payload(
-                self.turn_idx + 1, "；".join(hints), panel="hints"), player_input=stripped))
+            yield ("note", self._emit(self._hints_panel(), player_input=stripped))
             return
         if stripped == "本章结束":
             yield ("note", self._settlement())
@@ -175,6 +190,134 @@ class EngineSession:
                 return line
         return None
 
+    # ---- 世界活性：停滞检测与事件注入 ---------------------------------------------
+
+    def _progress_made(self, applied: list[dict]) -> bool:
+        """本轮是否有实质推进（flag/地点/锚点/物品变化）。"""
+        return any(
+            str(d["ref"]).startswith(("flag:", "item:", "anchor")) or d["ref"] == "地点"
+            for d in applied
+        )
+
+    def _stall_turns(self, turn: int) -> int:
+        last = int(self.state.extra.get("last_progress_turn", 0))
+        return max(0, turn - last - 1) if last else turn - 1
+
+    def _pick_stalled_event(self) -> dict | None:
+        """停滞时注入的事件：优先已到窗口的时间表锚点，否则轮换世界素材池。"""
+        turn = self.turn_idx + 1
+        for a in self.anchor_engine.anchors:
+            if a.get("is_triggered") or a["kind"] != "timeline":
+                continue
+            conds = a["trigger"].get("conds", [])
+            if any(c.get("type") == "turn_gte" and turn >= c.get("v", 1 << 30)
+                   for c in conds):
+                return {"title": a["title"], "desc": a["desc"], "anchor": a["title"]}
+        if not self.materials:
+            return None
+        used = set(self.state.extra.get("used_events", []))
+        fresh = [m for m in self.materials if m["title"] not in used] or self.materials
+        pick = fresh[int(self.state.extra.get("event_cursor", 0)) % len(fresh)]
+        self.state.extra["event_cursor"] = int(self.state.extra.get("event_cursor", 0)) + 1
+        used.add(pick["title"])
+        self.state.extra["used_events"] = list(used)[-12:]
+        return dict(pick)
+
+    def _world_agenda(self) -> str:
+        """世界活性清单（标题级，防剧透）：让模型知道世界有什么将要发生。"""
+        upcoming = [a["title"] for a in self.anchor_engine.anchors
+                    if not a.get("is_triggered") and a["kind"] == "timeline"][:6]
+        pool = [m["title"] for m in self.materials[:8]]
+        parts = []
+        if upcoming:
+            parts.append("大势将至：" + "、".join(upcoming))
+        if pool:
+            parts.append("四方风闻（随机事件素材）：" + "、".join(pool))
+        return "\n".join(parts)
+
+    # ---- AI 剧本配置（PackProfile） -----------------------------------------------
+
+    def _resolve_story_id(self) -> int | None:
+        with self.db.locked() as conn:
+            row = conn.execute(
+                "SELECT story_id FROM playthroughs WHERE id = ?", (self.playthrough_id,)
+            ).fetchone()
+        return int(row["story_id"]) if row else None
+
+    def _load_persisted_profile(self) -> dict | None:
+        if self.story_id is None:
+            return None
+        with self.db.locked() as conn:
+            row = conn.execute(
+                "SELECT metadata_json FROM storys WHERE id = ?", (self.story_id,)
+            ).fetchone()
+        if not row or not row["metadata_json"]:
+            return None
+        try:
+            meta = json.loads(row["metadata_json"])
+        except json.JSONDecodeError:
+            return None
+        return meta if isinstance(meta, dict) and meta.get("source") == "profile" else None
+
+    def _schedule_profile_generation(self) -> None:
+        """后台 AI 通读剧本生成配置：完成前用兜底 schema 先行，写库后下一局生效。"""
+        import threading
+
+        def _work() -> None:
+            try:
+                profile = build_pack_profile(self.pack, self.backend)
+                if not profile or self.story_id is None:
+                    return
+                with self.db.locked() as conn:
+                    conn.execute(
+                        "UPDATE storys SET metadata_json = ? WHERE id = ?",
+                        (json.dumps(profile, ensure_ascii=False), self.story_id),
+                    )
+                    self.db.conn.commit()
+                print(f"[profile] 剧本配置已生成并入库：{self.pack.title} "
+                      f"({len(profile.get('resources', []))} 资源, "
+                      f"{len(profile.get('panels', []))} 面板)")
+            except Exception as e:  # 后台生成失败不致命，兜底 schema 继续玩
+                print(f"[profile] 生成失败（将沿用兜底配置）：{e}")
+
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _render_profile_panel(self) -> TurnPayload | None:
+        """按 AI 配置渲染面板：fields.source 从引擎真实状态取数。"""
+        if not self.profile_panels:
+            return None
+        panel = (next((p for p in self.profile_panels if p.get("key") == "cultivator"), None)
+                 or self.profile_panels[0])
+        fields = []
+        for f in panel.get("fields", []):
+            label, source = f["label"], f["source"]
+            value = "—"
+            if source == "realm" and self.state.realms:
+                value = self.state.realm_name
+            elif source == "progress" and self.state.realms:
+                value = f"{self.state.progress:.0f}/100"
+            elif source == "lifespan" and self.state.realms:
+                value = f"{self.state.lifespan_left:.0f}年"
+            elif source == "location":
+                value = self.state.location or "未知"
+            elif source == "inventory":
+                items = [f"{i['name']}×{i.get('count', 1)}" for i in self.state.inventory]
+                value = "、".join(items[:6]) if items else "无"
+            elif source.startswith("res:"):
+                value = self.state._fmt_value(source[4:])
+            elif source.startswith("flags:"):
+                prefix = source[6:]
+                hits = [k for k in self.state.flags
+                        if k.startswith(prefix) and self.state.flags[k]]
+                value = "、".join(hits[-3:]) if hits else "无"
+            fields.append({"label": label, "value": str(value)})
+        return TurnPayload(
+            turn_idx=self.turn_idx + 1,
+            narrative=[{"type": "panel", "title": panel.get("title", "状态"),
+                        "fields": fields}],
+            system_note="面板（剧本配置定义 · 引擎实时数据）", panel="cultivator",
+        )
+
     def _sync_identity_flags(self) -> list[dict]:
         """模型写的自然名 flag → 线:<节点> 登记（幂等）。"""
         line = self._identity_line()
@@ -189,6 +332,42 @@ class EngineSession:
                     applied.append({"ref": f"flag:线:{node}", "op": "=", "v": 1,
                                     "reason": "身份线节点达成"})
         return applied
+
+    def _hints_panel(self) -> TurnPayload:
+        """提示面板（剧本包「提示面板」的三段式，全部引擎真数据）。"""
+        rows: list[dict] = []
+
+        # 主线与支线
+        next_anchor = next((a for a in self.anchor_engine.anchors
+                            if not a.get("is_triggered") and a["kind"] == "timeline"), None)
+        fired_recent = [a["title"] for a in self.anchor_engine.anchors
+                        if a.get("is_triggered") and a["kind"] == "timeline"][-2:]
+        if next_anchor:
+            rows.append({"label": "主线 · 山雨欲来", "value": f"{next_anchor['title']}（渐近）"})
+        for t in fired_recent:
+            rows.append({"label": "主线 · 已历", "value": t})
+        line = self._identity_line()
+        if line is not None:
+            nxt = next((n for n in line["nodes"]
+                        if not self.state.flags.get(f"线:{n}")), None)
+            rows.append({"label": f"支线 · {line['identity']}线",
+                         "value": nxt or "全线功成"})
+        if not any(r["label"].startswith("主线") for r in rows):
+            rows.append({"label": "主线", "value": "此剧本无固定时间表，命运随行动展开"})
+
+        # 角色互动：近期叙事中提到过的角色
+        recent_text = "".join(t.get("text", "") for t in self.recent)
+        met = [c["name"] for c in self.characters if c["name"] in recent_text][:5]
+        rows.append({"label": "角色互动",
+                     "value": "、".join(met) if met else "尚未结识他人"})
+
+        # 系统操作
+        rows.append({"label": "系统操作",
+                     "value": "「存档」「读取存档」「修士」「任务」「提示」「本章结束」"})
+
+        body = [{"type": "panel", "title": "提示面板", "fields": rows}]
+        return TurnPayload(turn_idx=self.turn_idx + 1, narrative=body,
+                           system_note="提示面板（引擎实时数据）", panel="hints")
 
     def _tasks_panel(self) -> TurnPayload:
         self._sync_identity_flags()
@@ -239,10 +418,21 @@ class EngineSession:
                 "当剧情确实完成某节点时，用 {\"flag\":\"线·<节点名>\"} 标记（每节点至多一次）；"
                 "禁止跳步、禁止凭空完成。"
             )
+        # 剧情停滞 → 强制注入随机事件（世界活性的核心机制）
+        stalled = self._stall_turns(turn) >= STALL_AFTER_TURNS
+        forced_event = self._pick_stalled_event() if stalled else None
+        if forced_event:
+            extra_system += (
+                f"\n\n【停滞警报】剧情已连续 {self._stall_turns(turn)} 轮无进展。"
+                f"本轮必须发生事件「{forced_event['title']}」——{forced_event.get('desc', '')[:70]}。"
+                "写成具体落到玩家头上的事件（谁/在哪/发生什么），"
+                f"并在 effects 里用 {{\"flag\":\"事件·{forced_event['title']}\"}} 登记。"
+            )
         messages = assemble_messages(
             self.pack, self.characters, self.state, self.recent,
             self.rolling_summary, self.anchor_engine.context_block(turn),
             user_input, turn, extra_system=extra_system,
+            world_agenda=self._world_agenda(),
         )
         try:
             data = self.backend.generate_json(messages, max_tokens=900, temperature=0.8)
@@ -272,6 +462,15 @@ class EngineSession:
         applied, _rejected = self.state.apply_effects(effects)
         # 身份线节点自动登记：模型写的自然名 flag → 线:<节点>
         applied += self._sync_identity_flags()
+        # 停滞注入的时间表事件：引擎直接放行（其自然条件可能尚未满足）
+        if forced_event and "anchor" not in [k for e in effects if isinstance(e, dict)
+                                             for k in e]:
+            for a in self.anchor_engine.anchors:
+                if a["kind"] == "timeline" and a["title"] == forced_event["title"] \
+                        and not a.get("is_triggered"):
+                    a["is_triggered"] = True
+                    applied.append({"ref": "anchor", "op": "=", "v": 1,
+                                    "reason": f"停滞注入：{a['title']}"})
 
         # 锚点请求按关键词去重（模型会对同一锚点连续请求）
         seen_reqs: set[str] = set()
@@ -323,6 +522,12 @@ class EngineSession:
         self._emit(payload, player_input=user_input,
                    adjudication={"effects": effects, "applied": applied})
 
+        # 实质推进则刷新停滞计时；时间表事件进滚动摘要
+        if self._progress_made(applied):
+            self.state.extra["last_progress_turn"] = turn
+        if self._profile_scheduled and self.schema.get("source") != "profile":
+            self._schedule_profile_generation()
+            self._profile_scheduled = True   # 已调度；置位语义复用为"已完成调度"
         if turn % SUMMARY_EVERY == 0:
             self.rolling_summary = summarize_turns(
                 self.backend, self.recent, self.rolling_summary)
@@ -369,6 +574,10 @@ class EngineSession:
 
     # ---- 章节结算 ----------------------------------------------------------------
 
+    def _resources_digest(self) -> str:
+        return "｜".join(f"{r['ref']}{self.state.attrs.get(r['ref'], 0):g}"
+                         for r in self.state.resources)
+
     def _settlement(self) -> TurnPayload:
         last = int(self.state.extra.get(SETTLEMENT_KEY, 0))
         with self.db.locked() as conn:
@@ -389,7 +598,7 @@ class EngineSession:
         lines = [
             f"本章共 {len(rows)} 回合。",
             "，".join(f"{k}{'增' if v >= 0 else '减'}{abs(v):g}" for k, v in deltas.items()) or "数值平稳。",
-            f"当前：{self.state.realm_name}，灵石{self.state.stones:g}，寿元余{self.state.lifespan_left:.0f}年。",
+            f"当前：{self.state.realm_name or '旅途中'}，{self._resources_digest()}。",
         ]
         return self._emit(TurnPayload(
             turn_idx=self.turn_idx + 1,
@@ -416,8 +625,8 @@ class EngineSession:
                              f"{self.pack.title} · 第{self.turn_idx}回合 · {self.state.realm_name}", snap)
         return self._emit(note_payload(
             self.turn_idx + 1,
-            f"已存档 [{slot}]：{self.state.realm_name}｜灵石{self.state.stones:g}｜"
-            f"寿元余{self.state.lifespan_left:.0f}年", panel="save"), player_input="存档")
+            f"已存档 [{slot}]：{self.state.realm_name or '旅途中'}｜{self._resources_digest()}",
+            panel="save"), player_input="存档")
 
     def _load(self, slot: str):
         snap = dao.plays.load_save(self.db, self.playthrough_id, slot)

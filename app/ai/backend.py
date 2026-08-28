@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 
@@ -18,6 +19,12 @@ Message = dict  # {"role": "system"|"user"|"assistant", "content": str}
 
 class LLMBackend(ABC):
     name = "base"
+
+    def __init__(self):
+        # 生成级互斥：llama.cpp 的 llama_context 非线程安全——同一实例被
+        # 两个线程并发 generate 会硬崩（进程消失、无 Python 异常）。
+        # 回合推理与后台任务（如剧本配置生成）共用实例时必须串行。
+        self._gen_lock = threading.RLock()
 
     @abstractmethod
     def generate(self, messages: list[Message], *, max_tokens: int = 1024,

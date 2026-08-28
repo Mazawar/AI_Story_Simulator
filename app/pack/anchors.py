@@ -116,6 +116,74 @@ def parse_anchors(pack: Pack) -> list[dict]:
     return anchors
 
 
+def parse_random_events(pack: Pack) -> list[dict]:
+    """随机事件池：- 坊市淘宝（地摊上的一枚玉简——摊主不知道它是什么，你知道）"""
+    section = pack.section("dynamics")
+    if section is None:
+        return []
+    body = section.body
+    # 定位「随机事件池（…）：」标题行（区别于"随机事件池陆续登场"的正文引用）
+    idx = None
+    for m in re.finditer(r"随机事件池[（(]", body):
+        idx = m.start()
+        break
+    if idx is None:
+        return []
+    events: list[dict] = []
+    for line in body[idx:].splitlines()[1:]:
+        s = line.strip()
+        if not s:
+            continue
+        m2 = re.match(r"^[-*·]\s*([^（（：:]{2,12})\s*[（(]?(.*)$", s)
+        if m2:
+            title = m2.group(1).strip()
+            desc = m2.group(2).strip("（）()。")
+            events.append({"title": title, "desc": desc[:80]})
+        elif events:
+            break                          # 列表结束
+    return events
+
+
+def parse_world_materials(pack: Pack, *, limit: int = 40) -> list[dict]:
+    """全包通用素材提取：任何章节的 bullet 列表 → 世界事件素材。
+
+    不依赖章节命名——修仙包的随机事件池、末日包的随机事件系统、
+    探索/NPC 条目都会被收进来，供停滞注入与"世界将发生之事"使用。
+    排除：揭晓点（剧透隔离）、选项行、创建步骤、引号对话示例。
+    """
+    materials: list[dict] = []
+    seen_titles: set[str] = set()
+    for section in pack.sections:
+        if section.key in ("preamble", "opening"):
+            continue
+        current_group = section.title
+        for line in section.body.splitlines():
+            s = line.strip()
+            if not s:
+                continue
+            if re.match(r"^[\-*·]\s", s):
+                title = ""
+                desc = ""
+                m = re.match(r"^[-*·]\s*([^（（：:]{2,16})\s*[（:：]?(.*)$", s)
+                if m:
+                    title, desc = m.group(1).strip(), m.group(2).strip("（）()。")
+                else:
+                    title = s.lstrip("-*· ").strip()[:16]
+                if (not title or len(title) < 2
+                        or title.startswith(("我", "你", "玩家", "例如", "\"", "“"))
+                        or "揭晓" in title or "真相" in s
+                        or re.match(r"^【?\s*[A-Da-d\d]", title)):
+                    continue
+                if title in seen_titles:
+                    continue
+                seen_titles.add(title)
+                materials.append({"group": current_group, "title": title,
+                                  "desc": desc[:70]})
+                if len(materials) >= limit:
+                    return materials
+    return materials
+
+
 def parse_identity_lines(pack: Pack) -> list[dict]:
     """身份线（支线节点链）：凡人包「你的身份线」四选一的 ①→⑤ 节点。
 

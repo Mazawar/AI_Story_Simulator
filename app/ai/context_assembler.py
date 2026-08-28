@@ -8,8 +8,12 @@
 from __future__ import annotations
 
 from ..pack.models import Pack
-from .prompts.wrapper import ENGINE_SYSTEM
-# 预算（字数；中文≈1.4字/token → 9000 token ≈ 12600 字）
+from .prompts.wrapper import ENGINE_FULL_WRAPPER, ENGINE_SYSTEM
+
+# 包体量分界：≤ FULL_INJECT_CHARS 的剧本直接全文注入（模型拿到完整设定）
+FULL_INJECT_CHARS = 6000
+
+# 预算（字数；中文≈1.4字/token）
 WORLD_BUDGET = 1600
 CARDS_MAX = 5
 CARD_BUDGET = 220
@@ -26,36 +30,45 @@ def _clip(text: str, budget: int) -> str:
 def assemble_messages(pack: Pack, characters: list[dict], state, recent_turns: list[dict],
                       rolling_summary: str, anchor_block: str,
                       player_input: str, turn: int,
-                      *, extra_system: str = "") -> list[dict]:
+                      *, extra_system: str = "", world_agenda: str = "") -> list[dict]:
     """组装引擎模式的一轮上下文。
 
     state: core.rules.NumericState；recent_turns: [{"input","text"}]（旧→新）。
     世界观文本进入前剥除揭晓点行（剧透隔离）；extra_system 追加剧本级指令
-    （如身份线推进规则）到稳定前缀尾部。
+    （身份线/停滞警报）；world_agenda 为世界活性标题清单。
     """
     from ..pack.anchors import strip_reveals
 
     # ---- 稳定前缀（system） ----------------------------------------------------
-    world = pack.section("world")
-    world_text = _clip(strip_reveals(world.body), WORLD_BUDGET) if world else ""
+    if len(pack.raw_text) <= FULL_INJECT_CHARS:
+        # 小包：整个剧本就是系统提示词（用户"给剧本→按设定推演"的主路径）
+        system = ENGINE_FULL_WRAPPER + "\n" + pack.raw_text.strip()
+    else:
+        world = pack.section("world")
+        # 无「世界观」章节的包（系统型/未知结构）：兜底取全包前段，
+        # 保证模型至少拿到剧本的核心设定
+        if world is not None:
+            world_text = _clip(strip_reveals(world.body), WORLD_BUDGET)
+        else:
+            world_text = _clip(strip_reveals(pack.raw_text), WORLD_BUDGET)
 
-    # 相关角色卡：最近回合提及者优先
-    recent_text = "".join(f"{t.get('input','')}{t.get('text','')}" for t in recent_turns)
-    ranked = sorted(
-        characters,
-        key=lambda c: 0 if c["name"] in recent_text else 1,
-    )
-    cards = "\n".join(
-        f"【{c['name']} · {_clip(c['desc'], CARD_BUDGET)}】" for c in ranked[:CARDS_MAX]
-    )
-
-    system = ENGINE_SYSTEM + (extra_system or "") + f"""
+        # 相关角色卡：最近回合提及者优先
+        recent_text = "".join(f"{t.get('input','')}{t.get('text','')}" for t in recent_turns)
+        ranked = sorted(
+            characters,
+            key=lambda c: 0 if c["name"] in recent_text else 1,
+        )
+        cards = "\n".join(
+            f"【{c['name']} · {_clip(c['desc'], CARD_BUDGET)}】" for c in ranked[:CARDS_MAX]
+        )
+        system = ENGINE_SYSTEM + (extra_system or "") + f"""
 
 【世界观】
 {world_text}
 
 【主要角色】
 {cards or '（无角色卡）'}
+{chr(10) + chr(10) + '【世界将发生之事】' + chr(10) + world_agenda if world_agenda else ''}
 """
 
     # ---- 动态后缀（user） -------------------------------------------------------

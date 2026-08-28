@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from app.pack import load_packs
-from app.pack.numeric import DEFAULT_SCHEMA, cn_num, parse_numeric_schema
+from app.pack.numeric import GENERIC_SCHEMA, cn_num, parse_numeric_schema
 
 SCRIPT_DIR = Path(__file__).resolve().parent.parent / "script"
 
@@ -62,12 +62,23 @@ class TestParseFanren(unittest.TestCase):
 
 
 class TestFallback(unittest.TestCase):
-    def test_jianlai_falls_back_to_default(self):
+    def test_jianlai_falls_back_to_generic(self):
         packs = load_packs(SCRIPT_DIR)
         jianlai = next(p for p in packs if "剑来" in p.title)
         schema = parse_numeric_schema(jianlai)
-        self.assertEqual(schema["source"], "default")
-        self.assertEqual(schema, DEFAULT_SCHEMA)
+        self.assertEqual(schema["source"], "generic")
+        self.assertEqual(schema["realms"], [], "武侠包不应有境界轴")
+        self.assertIn("生命", [r["ref"] for r in schema["resources"]])
+
+    def test_new_form_pack_generic(self):
+        """末日系统型包：无 numeric 章节 → 通用资源，题材无关。"""
+        packs = load_packs(SCRIPT_DIR)
+        moemo = next((p for p in packs if "末日" in p.title), None)
+        if moemo is None:
+            self.skipTest("末日包不存在")
+        schema = parse_numeric_schema(moemo)
+        self.assertEqual(schema["source"], "generic")
+        self.assertEqual(schema["realms"], [])
 
     def test_perfect_world_parsed(self):
         packs = load_packs(SCRIPT_DIR)
