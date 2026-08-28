@@ -13,6 +13,8 @@ import threading
 from ..core.engine import DirectEngine
 
 log = logging.getLogger("story.play")
+log_adjudicate = logging.getLogger("story.adjudicate")
+log_adjudicate.setLevel(logging.INFO)
 
 
 class PlaySession:

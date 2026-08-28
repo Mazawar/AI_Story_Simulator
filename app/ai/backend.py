@@ -45,11 +45,16 @@ class LLMBackend(ABC):
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 
 
+_TRAILING_COMMA_RE = re.compile(r",\s*([}\]])")
+
+
 def repair_json(text: str) -> dict:
-    """从模型输出中提取 JSON 对象：剥代码围栏、截取首个配平的 {...}。"""
+    """从模型输出中提取 JSON 对象：剥代码围栏、截取首个配平的 {...}，
+    并容错小模型常见毛病（尾随逗号、中文引号）。"""
     m = _FENCE_RE.search(text)
     if m:
         text = m.group(1)
+    text = text.replace("“", '"').replace("”", '"')
     start = text.find("{")
     if start < 0:
         raise ValueError(f"模型输出中未找到 JSON 对象：{text[:120]!r}")
@@ -61,7 +66,12 @@ def repair_json(text: str) -> dict:
         elif ch == "}":
             depth -= 1
             if depth == 0:
-                return json.loads(text[start : i + 1])
+                candidate = _TRAILING_COMMA_RE.sub(r"\1", text[start : i + 1])
+                try:
+                    return json.loads(candidate)
+                except json.JSONDecodeError:
+                    text = candidate
+                    raise
     raise ValueError("模型输出的 JSON 对象未闭合")
 
 

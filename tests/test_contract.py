@@ -44,6 +44,13 @@ class TestRepairJson(unittest.TestCase):
         text = '好的，以下是结果：{"a": {"b": 2}} 请查收'
         self.assertEqual(repair_json(text), {"a": {"b": 2}})
 
+    def test_trailing_comma_tolerated(self):
+        self.assertEqual(repair_json('{"a": 1, "b": [1, 2,],}'), {"a": 1, "b": [1, 2]})
+
+    def test_chinese_quotes_tolerated(self):
+        self.assertEqual(repair_json('{"narrative": “带中文引号的文本。”, "effects": []}'),
+                         {"narrative": "带中文引号的文本。", "effects": []})
+
     def test_missing_json_raises(self):
         with self.assertRaises(ValueError):
             repair_json("没有任何结构化内容")
