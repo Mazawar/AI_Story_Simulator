@@ -64,14 +64,18 @@ export default function Settings() {
   return (
     <div className="settings">
       <header className="settings-header">
-        <button className="icon-btn" onClick={() => { location.hash = '#/' }}>
+        <button className="icon-btn" onClick={() => { location.hash = '#/' }} title="返回">
           <ArrowLeftOutlined />
         </button>
-        <h1 className="settings-title">设置</h1>
+        <div className="settings-seal">设</div>
+        <div>
+          <h1 className="settings-title">设置</h1>
+          <p className="settings-sub">模型档位与在线服务</p>
+        </div>
       </header>
 
       <section className="settings-card">
-        <h2>推理模型档位</h2>
+        <h2><span className="card-ico">⚡</span>推理模型档位</h2>
         <div className="settings-row">
           <label className="radio-opt">
             <input type="radio" checked={cfg.model_choice !== '4b'}
@@ -93,13 +97,13 @@ export default function Settings() {
       </section>
 
       <section className="settings-card">
-        <h2>在线 API（可选）</h2>
+        <h2><span className="card-ico">🌐</span>在线 API（可选）</h2>
         <p className="settings-hint">
           配置任意 OpenAI 兼容接口（官方 / DeepSeek / 智谱 / 本地 Ollama…）。
           启用后推演走在线模型，连接失败自动回落本地。
         </p>
         <div className="settings-form">
-          <label>API 地址（以 /v1 结尾）
+          <label className="span2">API 地址（以 /v1 结尾）
             <Input value={cfg.api_base_url} onChange={set('api_base_url')}
                    placeholder="https://api.example.com/v1" />
           </label>
@@ -111,7 +115,7 @@ export default function Settings() {
             <Input value={cfg.api_model} onChange={set('api_model')}
                    placeholder="如 deepseek-chat / glm-4-flash" />
           </label>
-          <div className="settings-switches">
+          <div className="settings-switches span2">
             <label><Switch size="small" checked={cfg.prefer_online} onChange={set('prefer_online')} />
               启用在线优先（关闭 = 纯本地推演）</label>
             <label><Switch size="small" checked={cfg.api_allow_private} onChange={set('api_allow_private')} />

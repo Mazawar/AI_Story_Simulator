@@ -501,9 +501,32 @@ body {
 }
 
 /* ---- 设置页 ---- */
-.settings { max-width: 760px; margin: 0 auto; padding: 40px 24px 60px; }
-.settings-header { display: flex; align-items: center; gap: 14px; margin-bottom: 26px; }
-.settings-title { font-family: var(--serif); font-size: 24px; letter-spacing: 6px; margin: 0; }
+.settings { max-width: 960px; margin: 0 auto; padding: 44px 24px 60px; }
+.settings-header {
+  display: flex; align-items: center; gap: 18px; margin-bottom: 30px;
+}
+.settings-seal {
+  width: 52px; height: 52px; border-radius: 13px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 24px; color: #101408;
+  background: linear-gradient(135deg, var(--jade) 0%, #a8d9a0 55%, var(--gold) 130%);
+  box-shadow: 0 4px 16px rgba(143, 206, 136, 0.25);
+}
+.settings-title { font-family: var(--serif); font-size: 26px; letter-spacing: 6px; margin: 0; }
+.settings-sub { margin: 4px 0 0; font-size: 13px; color: var(--text-dim); letter-spacing: 1px; }
+.settings-card h2 { display: flex; align-items: center; gap: 8px; }
+.card-ico {
+  width: 26px; height: 26px; border-radius: 8px; font-size: 13px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(216, 184, 120, 0.1); border: 1px solid rgba(216, 184, 120, 0.3);
+}
+.settings-form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
+.settings-form .span2 { grid-column: 1 / -1; }
+.settings-form label { display: grid; gap: 6px; font-size: 13px; color: var(--text-dim); }
+.settings-switches { display: flex; gap: 28px; margin-top: 4px; flex-wrap: wrap; }
+.settings-switches label { display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text); cursor: pointer; }
+.settings-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.settings-actions .ant-btn { height: 38px; border-radius: 10px; padding: 0 20px; }
 .settings-card {
   background: var(--ink-2); border: 1px solid var(--line); border-radius: 14px;
   padding: 20px 24px; margin-bottom: 20px;
