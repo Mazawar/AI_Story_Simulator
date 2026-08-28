@@ -1,0 +1,14 @@
+2026-08-29 00:53:23,095
+裁决失败 turn=1 input='【人物已定】1.A（石村时期——祭灵的柳树还在村中央，喝兽奶的小不点…）；2.A（石村村民——最稳妥的开局，有祭灵庇护，'
+Traceback (most recent call last):
+  File "app\core\engine_mode.py", line 504, in _adjudicate
+  File "app\ai\backend.py", line 42, in generate_json
+  File "app\ai\backend.py", line 75, in repair_json
+ValueError: 模型输出的 JSON 对象未闭合
+2026-08-29 00:54:37,462
+裁决失败 turn=1 input='开始'
+Traceback (most recent call last):
+  File "app\core\engine_mode.py", line 504, in _adjudicate
+  File "app\ai\backend.py", line 42, in generate_json
+  File "app\ai\backend.py", line 60, in repair_json
+ValueError: 模型输出中未找到 JSON 对象：''

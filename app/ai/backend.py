@@ -38,8 +38,33 @@ class LLMBackend(ABC):
 
     def generate_json(self, messages: list[Message], *, max_tokens: int = 1024,
                       temperature: float = 0.3) -> dict:
-        text = self.generate(messages, max_tokens=max_tokens, temperature=temperature)
-        return repair_json(text)
+        """结构化生成（在线/远端路径）：解析失败自动重试，限额逐步加码。
+
+        覆盖小模型/在线接口的高频毛病：空输出、JSON 未闭合（截断）、尾随逗号。
+        """
+        last_err: Exception | None = None
+        plans = [
+            (max_tokens, temperature, ""),
+            (int(max_tokens * 1.5), max(0.2, temperature - 0.3),
+             "\n\n（上一次输出无效。请只输出一个合法 JSON 对象，内容精简，务必闭合。）"),
+            (int(max_tokens * 2), 0.2,
+             "\n\n（再次强调：只输出一个精简、闭合的 JSON 对象，narrative 控制在 80 字内。）"),
+        ]
+        for mt, temp, hint in plans:
+            msgs = messages
+            if hint:
+                msgs = list(messages)
+                msgs[-1] = {**msgs[-1], "content": str(msgs[-1]["content"]) + hint}
+            text = self.generate(msgs, max_tokens=mt, temperature=temp).strip()
+            if not text:
+                last_err = ValueError("模型输出为空")
+                continue
+            try:
+                return repair_json(text)
+            except ValueError as e:
+                last_err = e
+                continue
+        raise last_err or ValueError("模型输出无效")
 
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)

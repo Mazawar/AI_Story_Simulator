@@ -500,12 +500,21 @@ class EngineSession:
             world_agenda=self._world_agenda(),
             player_role=self.schema.get("player_role", ""),
         )
+        remote_fail_note = ""
         try:
             data = self.backend.generate_json(messages, max_tokens=2000, temperature=0.8)
             if self.backend.name == "remote":
                 from ..server.routers import _REMOTE_FAIL_COUNT
                 _REMOTE_FAIL_COUNT["n"] = 0
-        except Exception:
+        except Exception as e:
+            if getattr(self.backend, "name", "") == "remote":
+                from ..server.routers import _REMOTE_FAIL_COUNT
+                _REMOTE_FAIL_COUNT["n"] += 1
+                remote_fail_note = (
+                    f"（在线模型输出异常：{str(e)[:60]}；"
+                    f"{'连续 ' + str(_REMOTE_FAIL_COUNT['n']) + ' 次，' if _REMOTE_FAIL_COUNT['n'] >= 3 else ''}"
+                    f"可在设置中检查 API 或切回本地档位）"
+                )
             if getattr(self.backend, "name", "") == "remote":
                 from ..server.routers import _REMOTE_FAIL_COUNT
                 _REMOTE_FAIL_COUNT["n"] += 1
@@ -528,7 +537,8 @@ class EngineSession:
             # 失败根因必须留痕（data/play_errors.log）
             log.exception("裁决失败 turn=%s input=%r", turn, user_input[:60])
             note = ("命运的笔锋顿了顿——这一瞬世界没能推演下去。"
-                    "换一种行动试试。")
+                    + remote_fail_note
+                    + "换一种行动试试。")
             payload = TurnPayload(
                 turn_idx=turn,
                 narrative=[{"type": "narration", "text": note},
