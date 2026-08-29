@@ -412,7 +412,7 @@ def _preset_exists(key: str) -> dict:
     size = f.stat().st_size if f.is_file() else 0
     # 下载进行中的文件不算就绪（半截文件会误导为可用）
     downloading = _dl_state["running"] and _dl_state["key"] == key
-    return {"exists": size > 1024 * 1024 and not downloading,
+    return {"exists": size > 5 * 1024 * 1024 and not downloading,
             "size": size, "filename": preset["file"]}
 
 

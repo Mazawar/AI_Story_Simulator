@@ -79,6 +79,24 @@ export default function Settings() {
         </div>
       )
     }
+    // 上次下载失败 → 红字原因 + 重试 + 手动下载指引
+    if (dl.error && dl.key === keyName && !dl.running) {
+      return (
+        <div className="model-dl-fail">
+          <div className="model-dl-fail-msg">下载失败：{dl.error}</div>
+          <div className="model-dl-fail-actions">
+            <button className="model-dl-btn" onClick={(e) => { e.stopPropagation(); downloadModel(keyName) }}>
+              重试（已切换下载源）
+            </button>
+            <a className="model-dl-manual" target="_blank" rel="noreferrer"
+               href="https://hf-mirror.com/unsloth/Qwen_Qwen3-1.7B-GGUF"
+               onClick={(e) => e.stopPropagation()}>
+              手动下载 → 放入 models/
+            </a>
+          </div>
+        </div>
+      )
+    }
     return (
       <button className="model-dl-btn"
               onClick={(e) => { e.stopPropagation(); downloadModel(keyName) }}>
