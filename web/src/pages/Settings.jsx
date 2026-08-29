@@ -55,18 +55,18 @@ export default function Settings() {
     const info = modelStatus?.models?.[keyName] || null
     const downloading = dl.running && dl.key === keyName
     const pct = dl.total ? Math.min(100, Math.floor((dl.done * 100) / dl.total)) : 0
+    const kbDone = Math.floor(dl.done / 1024)
+    const kbTotal = Math.floor(dl.total / 1024)
 
     if (downloading) {
-      const mb = (dl.done / 1048576).toFixed(0)
-      const totalMb = (dl.total / 1048576).toFixed(0)
       return (
         <div className="model-dl-live">
           <Progress type="circle" size={46} percent={pct}
                     strokeColor={{ '0%': '#8fce88', '100%': '#d8b878' }}
-                    format={(p) => `${p}%`} />
+                    format={() => `${kbDone} KB`} />
           <div className="model-dl-live-info">
             <b>正在获取 {sizeGb}</b>
-            <span>{mb} / {totalMb} MB</span>
+            <span>已下载 {kbDone} KB{kbTotal ? ` / 共 ${kbTotal} KB` : ''}</span>
           </div>
         </div>
       )
@@ -97,10 +97,12 @@ export default function Settings() {
         </div>
       )
     }
+    const partialMb = info && info.size > 1024 * 1024
+      ? `（已传 ${(info.size / 1048576).toFixed(0)} MB，断点续传）` : ''
     return (
       <button className="model-dl-btn"
               onClick={(e) => { e.stopPropagation(); downloadModel(keyName) }}>
-        <DownloadOutlined /> 获取模型（{sizeGb}）
+        <DownloadOutlined /> {partialMb ? `继续下载${partialMb}` : `获取模型（${sizeGb}）`}
       </button>
     )
   }

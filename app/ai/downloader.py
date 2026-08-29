@@ -96,6 +96,12 @@ def _download_one(url: str, dest: Path, progress_cb=None, phase_cb=None) -> None
                 break
             f.write(chunk)
             done += len(chunk)
+            # 进度回调无条件上报（部分源无 Content-Length，total 可能为 None）
+            if progress_cb:
+                try:
+                    progress_cb(done, total)
+                except Exception:
+                    pass
             if total:
                 sys.stdout.write("\r  %s / %s（%d%%）" % (_human(done), _human(total), done * 100 // total))
                 sys.stdout.flush()
@@ -131,6 +137,8 @@ def fetch(preset_or_url: str, models_dir: Path, *, name: str | None = None,
             if dest.stat().st_size < 1024 * 1024:
                 dest.unlink(missing_ok=True)
                 raise ValueError("下载结果异常（小于 1MB），可能源不可用")
+            # 完整性标记：.ok 记录最终大小（就绪判定依据；中断的半截文件没有它）
+            dest.with_suffix(dest.suffix + ".ok").write_text(str(dest.stat().st_size))
             print(f"完成：{dest}（{_human(dest.stat().st_size)}）")
             return dest
         except (UnsafeAPIEndpointError, ValueError) as e:
