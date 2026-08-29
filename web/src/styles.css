@@ -585,3 +585,14 @@ body {
 }
 .model-dl-bar > div { height: 100%; background: linear-gradient(90deg, var(--jade-deep), var(--jade)); transition: width 0.4s; }
 .model-dl-progress span { font-size: 12px; color: var(--jade); min-width: 32px; }
+
+.model-dl-live { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+.model-dl-live-info { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
+.model-dl-live-info b { color: var(--text); }
+.model-dl-live-info span { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.model-ready-row {
+  display: flex; align-items: center; gap: 6px; margin-top: 6px;
+  color: var(--jade); font-size: 12.5px;
+}
+.model-ready-row .model-ready-ico { font-size: 13px; }
+.model-dl-btn { margin-top: 6px; }

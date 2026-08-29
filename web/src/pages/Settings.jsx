@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Input, Switch, message } from 'antd'
 import { ArrowLeftOutlined, ApiOutlined, SaveOutlined, DownloadOutlined, CheckCircleFilled } from '@ant-design/icons'
+import { Progress } from 'antd'
 import { api } from '../api.js'
 
 export default function Settings() {
@@ -27,7 +28,7 @@ export default function Settings() {
       try {
         const s = await api('/api/models/status')
         setModelStatus(s)
-        timer = setTimeout(poll, s.download?.running ? 1200 : 6000)
+        timer = setTimeout(poll, s.download?.running ? 800 : 6000)
       } catch { timer = setTimeout(poll, 6000) }
     }
     poll()
@@ -35,9 +36,13 @@ export default function Settings() {
   }, [])
 
   const downloadModel = async (key) => {
+    // 立即乐观反馈：不等服务端往返
+    setModelStatus((s) => ({ ...s, download: { running: true, key, done: 0, total: 0, percent: 0 } }))
     try {
       await api('/api/models/download', { method: 'POST', body: JSON.stringify({ key }) })
-      message.info('开始下载（断点续传，关闭页面不中断）')
+      message.success({ content: '开始获取模型，可随时查看进度', key: 'dl', duration: 2 })
+      // 立即拉一次真实状态（随后高频轮询接管）
+      setModelStatus(await api('/api/models/status'))
     } catch (e) {
       message.error('下载启动失败：' + (e.message || e))
     }
@@ -48,22 +53,36 @@ export default function Settings() {
 
   const ModelStatusLine = ({ keyName, sizeGb }) => {
     const info = modelStatus?.models?.[keyName] || null
-    if (dl.running && dl.key === keyName) {
-      const pct = dl.total ? Math.floor((dl.done * 100) / dl.total) : 0
+    const downloading = dl.running && dl.key === keyName
+    const pct = dl.total ? Math.min(100, Math.floor((dl.done * 100) / dl.total)) : 0
+
+    if (downloading) {
+      const mb = (dl.done / 1048576).toFixed(0)
+      const totalMb = (dl.total / 1048576).toFixed(0)
       return (
-        <div className="model-dl-progress">
-          <div className="model-dl-bar"><div style={{ width: `${pct}%` }} /></div>
-          <span>{pct}%</span>
+        <div className="model-dl-live">
+          <Progress type="circle" size={46} percent={pct}
+                    strokeColor={{ '0%': '#8fce88', '100%': '#d8b878' }}
+                    format={(p) => `${p}%`} />
+          <div className="model-dl-live-info">
+            <b>正在获取 {sizeGb}</b>
+            <span>{mb} / {totalMb} MB</span>
+          </div>
         </div>
       )
     }
     if (info?.exists) {
-      return <p className="model-ready"><CheckCircleFilled /> 已就绪 · {(info.size / 1073741824).toFixed(1)} GB</p>
+      return (
+        <div className="model-ready-row">
+          <CheckCircleFilled className="model-ready-ico" />
+          <span>已就绪 · {(info.size / 1073741824).toFixed(1)} GB</span>
+        </div>
+      )
     }
     return (
       <button className="model-dl-btn"
               onClick={(e) => { e.stopPropagation(); downloadModel(keyName) }}>
-        <DownloadOutlined /> 下载模型（{sizeGb}）
+        <DownloadOutlined /> 获取模型（{sizeGb}）
       </button>
     )
   }
