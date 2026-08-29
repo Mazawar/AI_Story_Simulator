@@ -422,7 +422,9 @@ class DownloadReq(BaseModel):
 
 @router.get("/models/status")
 def models_status(request: Request):
-    from ..ai.downloader import PRESETS
+    from ..ai.downloader import PRESETS, migrate_existing
+
+    migrate_existing(config.MODELS_DIR)   # 幂等：已认证的自动跳过
 
     with _dl_lock:
         dl = dict(_dl_state)
@@ -449,11 +451,16 @@ def models_download(request: Request, body: DownloadReq):
 
     def _work() -> None:
         try:
-            def cb(done: int, total: int) -> None:
+            def cb(done: int, total: int, phase: str | None = None) -> None:
                 with _dl_lock:
                     _dl_state["done"] = done
                     _dl_state["total"] = total
-            downloader.fetch(body.key, config.MODELS_DIR, progress_cb=cb)
+                    if phase:
+                        _dl_state["phase"] = phase
+                    else:
+                        _dl_state["phase"] = "downloading"
+            downloader.fetch(body.key, config.MODELS_DIR, progress_cb=cb,
+                             phase_cb=lambda ph: cb(0, 0, ph))
             with _dl_lock:
                 _dl_state["finished"] = True
         except Exception as e:

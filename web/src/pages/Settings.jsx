@@ -55,18 +55,18 @@ export default function Settings() {
     const info = modelStatus?.models?.[keyName] || null
     const downloading = dl.running && dl.key === keyName
     const pct = dl.total ? Math.min(100, Math.floor((dl.done * 100) / dl.total)) : 0
-    const kbDone = Math.floor(dl.done / 1024)
-    const kbTotal = Math.floor(dl.total / 1024)
+    const mbDone = (dl.done / 1048576).toFixed(1)
+    const mbTotal = dl.total ? (dl.total / 1048576).toFixed(0) : '?'
 
     if (downloading) {
       return (
         <div className="model-dl-live">
           <Progress type="circle" size={46} percent={pct}
                     strokeColor={{ '0%': '#8fce88', '100%': '#d8b878' }}
-                    format={() => `${kbDone} KB`} />
+                    format={(p) => `${p}%`} />
           <div className="model-dl-live-info">
             <b>正在获取 {sizeGb}</b>
-            <span>已下载 {kbDone} KB{kbTotal ? ` / 共 ${kbTotal} KB` : ''}</span>
+            <span>已下载 {mbDone} / {mbTotal} MB</span>
           </div>
         </div>
       )

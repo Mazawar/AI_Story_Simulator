@@ -20,6 +20,8 @@ from .remote import UnsafeAPIEndpointError, validate_endpoint
 PRESETS: dict[str, dict] = {
     "qwen3-1.7b": {
         "file": "qwen3-1.7b-instruct-q4_k_m.gguf",
+        "sha256": "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897",
+        "size": 1107409472,
         "urls": [
             "https://hf-mirror.com/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf",
             "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf",
@@ -28,6 +30,8 @@ PRESETS: dict[str, dict] = {
     },
     "qwen3-4b": {
         "file": "qwen3-4b-instruct-2507-q4_k_m.gguf",
+        "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+        "size": 2497281120,
         "urls": [
             "https://hf-mirror.com/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
             "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
@@ -36,6 +40,8 @@ PRESETS: dict[str, dict] = {
     },
     "qwen3-0.6b": {
         "file": "qwen3-0.6b-instruct-q4_k_m.gguf",
+        "sha256": "ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a",
+        "size": 396705472,
         "urls": [
             "https://hf-mirror.com/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf",
             "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf",
@@ -137,8 +143,24 @@ def fetch(preset_or_url: str, models_dir: Path, *, name: str | None = None,
             if dest.stat().st_size < 1024 * 1024:
                 dest.unlink(missing_ok=True)
                 raise ValueError("下载结果异常（小于 1MB），可能源不可用")
-            # 完整性标记：.ok 记录最终大小（就绪判定依据；中断的半截文件没有它）
-            dest.with_suffix(dest.suffix + ".ok").write_text(str(dest.stat().st_size))
+            # SHA256 完整性校验（对比官方摘要；能发现截断/损坏/篡改）
+            expected = preset.get("sha256") if preset else None
+            if expected and phase_cb:
+                phase_cb("verifying")
+                import hashlib
+
+                sha = hashlib.sha256()
+                with dest.open("rb") as fh:
+                    for block in iter(lambda: fh.read(1024 * 1024), b""):
+                        sha.update(block)
+                actual = sha.hexdigest()
+                if actual != expected:
+                    dest.unlink(missing_ok=True)
+                    raise ValueError(
+                        f"SHA256 校验失败（实际 {actual[:12]}…，预期 {expected[:12]}…），"
+                        "文件已删除——请重试（会切换下载源）")
+            # 校验通过 → 写 .ok 认证标记（含官方摘要）
+            dest.with_suffix(dest.suffix + ".ok").write_text(expected, encoding="utf-8")
             print(f"完成：{dest}（{_human(dest.stat().st_size)}）")
             return dest
         except (UnsafeAPIEndpointError, ValueError) as e:
@@ -147,6 +169,15 @@ def fetch(preset_or_url: str, models_dir: Path, *, name: str | None = None,
             last_error = e
             print(f"  源失败（{e}），尝试下一个源…")
     raise RuntimeError(f"全部源下载失败：{last_error}")
+
+
+def migrate_existing(models_dir: Path) -> None:
+    """存量模型迁移：字节数与官方精确一致的补写 .ok 认证（一次性）。"""
+    for preset in PRESETS.values():
+        f = Path(models_dir) / preset["file"]
+        ok_file = f.with_suffix(f.suffix + ".ok")
+        if f.is_file() and not ok_file.is_file() and f.stat().st_size == preset["size"]:
+            ok_file.write_text(preset["sha256"], encoding="utf-8")
 
 
 def scan(models_dir: Path) -> list[dict]:
