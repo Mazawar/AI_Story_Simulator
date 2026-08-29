@@ -10,7 +10,10 @@
 
 from __future__ import annotations
 
+import shutil
 import sys
+import threading
+import time as _time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -76,6 +79,75 @@ def _safe_filename(raw: str) -> str:
     if not name or name.startswith("."):
         raise ValueError(f"非法文件名：{raw!r}")
     return name
+
+
+def _download_segmented(url: str, dest: Path, total_size: int, *,
+                        workers: int = 8, retries: int = 3,
+                        progress_cb=None, phase_cb=None, note_cb=None) -> None:
+    """分段并发下载：文件切 N 段，各段独立 Range 并发拉取 + 独立断点重试。
+
+    单连接被网络路径掐断（几百 KB 就断流）时，其它段不受影响；段完成后
+    按序拼接，最后整体 SHA256 校验（由调用方执行）。
+    """
+    import concurrent.futures as _futures
+
+    workers = max(4, min(workers, total_size // (20 * 1024 * 1024) or 1))  # ≥20MB/段
+    seg_size = -(-total_size // workers)
+    ranges = [(i * seg_size, min((i + 1) * seg_size, total_size) - 1)
+              for i in range(workers)]
+    parts = [dest.with_suffix(dest.suffix + f".part{i}") for i in range(workers)]
+    lock = threading.Lock()
+    done_bytes = [0]
+
+    def report(n: int) -> None:
+        with lock:
+            done_bytes[0] += n
+        if progress_cb:
+            try:
+                progress_cb(done_bytes[0], total_size)
+            except Exception:
+                pass
+
+    def pull(idx: int, start: int, end: int, part: Path) -> None:
+        want = end - start + 1
+        for attempt in range(1, retries + 1):
+            have = part.stat().st_size if part.is_file() else 0
+            if have >= want:
+                return
+            try:
+                req = urllib.request.Request(url, headers={
+                    "User-Agent": "ai-story-simulator/0.1",
+                    "Range": "bytes=%d-%d" % (start + have, end),
+                })
+                resp = _OPENER.open(req, timeout=45)
+                with resp, part.open("ab") as f:
+                    while True:
+                        chunk = resp.read(256 * 1024)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        report(len(chunk))
+                if part.stat().st_size >= want:
+                    return
+            except Exception as e:
+                if attempt == retries:
+                    raise OSError(f"分段 {idx + 1} 下载失败：{e}") from e
+                _time.sleep(2 * attempt)
+
+    if phase_cb:
+        phase_cb("downloading")
+    with _futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(pull, i, s, e, parts[i])
+                   for i, (s, e) in enumerate(ranges)]
+        for fut in futures:
+            fut.result()
+
+    # 段完成 → 按序拼接；part 文件清理
+    with dest.open("wb") as out:
+        for part in parts:
+            with part.open("rb") as f:
+                shutil.copyfileobj(f, out, 1024 * 1024)
+            part.unlink()
 
 
 def _download_one(url: str, dest: Path, progress_cb=None, phase_cb=None,
@@ -167,6 +239,7 @@ def fetch(preset_or_url: str, models_dir: Path, *, name: str | None = None,
                 actual = sha.hexdigest()
                 if actual != expected:
                     dest.unlink(missing_ok=True)
+                    dest.with_suffix(dest.suffix + ".ok").unlink(missing_ok=True)
                     msg = (f"数据校验失败（SHA256 不符），已删除并切换下载源重新获取"
                            if note_cb is None else "")
                     if note_cb:
