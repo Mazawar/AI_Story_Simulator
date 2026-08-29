@@ -397,9 +397,25 @@ def test_settings(request: Request):
 
 import threading as _threading
 
-_dl_state: dict = {"running": False, "key": "", "done": 0, "total": 0,
-                   "error": None, "file": ""}
+_dl_state: dict = {"running": False, "key": "", "phase": "idle",
+                   "error": None, "file": "", "finished": False}
 _dl_lock = _threading.Lock()
+
+
+def _local_progress(key: str) -> tuple[int, int]:
+    """进度真源 = 本地文件实际大小（含分段 .part）；总量 = 官方声明大小。
+    每次查询实时 stat，任何源/重试/中断下都真实连续。"""
+    from ..ai.downloader import PRESETS
+
+    preset = PRESETS[key]
+    total = preset.get("size") or 0
+    done = 0
+    main = config.MODELS_DIR / preset["file"]
+    if main.is_file():
+        done += main.stat().st_size
+    for part in config.MODELS_DIR.glob(preset["file"] + ".part*"):
+        done += part.stat().st_size
+    return min(done, total or done), total
 
 
 def _preset_exists(key: str) -> dict:
@@ -412,7 +428,20 @@ def _preset_exists(key: str) -> dict:
     size = f.stat().st_size if f.is_file() else 0
     # 下载进行中的文件不算就绪（半截文件会误导为可用）
     downloading = _dl_state["running"] and _dl_state["key"] == key
-    return {"exists": size > 5 * 1024 * 1024 and not downloading,
+    # 完整性强判定：.ok 认证内容 == 官方 SHA256 且大小精确匹配官方值。
+    # 半截文件 / 残留认证都无法通过。
+    ok_file = f.with_suffix(f.suffix + ".ok")
+    expected_size = preset.get("size")
+    expected_sha = preset.get("sha256")
+    ok_valid = False
+    if ok_file.is_file():
+        try:
+            ok_valid = ok_file.read_text(encoding="utf-8").strip() == expected_sha
+        except OSError:
+            ok_valid = False
+    exact_size = expected_size is not None and size == expected_size
+    complete = (ok_valid or exact_size) and size > 1024 * 1024
+    return {"exists": complete and not downloading,
             "size": size, "filename": preset["file"]}
 
 
@@ -428,12 +457,23 @@ def models_status(request: Request):
 
     with _dl_lock:
         dl = dict(_dl_state)
-        if dl["running"] and dl["total"]:
-            dl["percent"] = int(dl["done"] * 100 / dl["total"])
-        else:
-            dl["percent"] = 100 if dl.get("finished") else 0
+    key = dl.get("key") or ""
+    if key and key in _preset_keys():
+        done, total = _local_progress(key)
+        dl["done"] = done
+        dl["total"] = total
+        dl["percent"] = min(100, int(done * 100 / total)) if total else 0
+    else:
+        dl["done"] = dl["total"] = dl["percent"] = 0
+    if dl.get("finished"):
+        dl["percent"] = 100
     return {"download": dl,
             "models": {k: _preset_exists(k) for k in PRESETS}}
+
+
+def _preset_keys():
+    from ..ai.downloader import PRESETS
+    return set(PRESETS)
 
 
 @router.post("/models/download")

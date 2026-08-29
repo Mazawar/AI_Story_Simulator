@@ -84,6 +84,7 @@ def _safe_filename(raw: str) -> str:
 def _download_segmented(url: str, dest: Path, total_size: int, *,
                         workers: int = 8, retries: int = 3,
                         progress_cb=None, phase_cb=None, note_cb=None) -> None:
+    """progress_cb 参数保留兼容但不再依赖——进度真源是本地文件大小（调用方 stat）。"""
     """分段并发下载：文件切 N 段，各段独立 Range 并发拉取 + 独立断点重试。
 
     单连接被网络路径掐断（几百 KB 就断流）时，其它段不受影响；段完成后
@@ -96,17 +97,6 @@ def _download_segmented(url: str, dest: Path, total_size: int, *,
     ranges = [(i * seg_size, min((i + 1) * seg_size, total_size) - 1)
               for i in range(workers)]
     parts = [dest.with_suffix(dest.suffix + f".part{i}") for i in range(workers)]
-    lock = threading.Lock()
-    done_bytes = [0]
-
-    def report(n: int) -> None:
-        with lock:
-            done_bytes[0] += n
-        if progress_cb:
-            try:
-                progress_cb(done_bytes[0], total_size)
-            except Exception:
-                pass
 
     def pull(idx: int, start: int, end: int, part: Path) -> None:
         want = end - start + 1
@@ -126,7 +116,6 @@ def _download_segmented(url: str, dest: Path, total_size: int, *,
                         if not chunk:
                             break
                         f.write(chunk)
-                        report(len(chunk))
                 if part.stat().st_size >= want:
                     return
             except Exception as e:
@@ -181,12 +170,6 @@ def _download_one(url: str, dest: Path, progress_cb=None, phase_cb=None,
                 break
             f.write(chunk)
             done += len(chunk)
-            # 进度回调无条件上报（部分源无 Content-Length，total 可能为 None）
-            if progress_cb:
-                try:
-                    progress_cb(done, total)
-                except Exception:
-                    pass
             if total:
                 sys.stdout.write("\r  %s / %s（%d%%）" % (_human(done), _human(total), done * 100 // total))
                 sys.stdout.flush()
