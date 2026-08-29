@@ -78,7 +78,8 @@ def _safe_filename(raw: str) -> str:
     return name
 
 
-def _download_one(url: str, dest: Path, progress_cb=None, phase_cb=None) -> None:
+def _download_one(url: str, dest: Path, progress_cb=None, phase_cb=None,
+                  note_cb=None) -> None:
     validate_endpoint(url)
     if phase_cb:
         phase_cb("connecting")
@@ -91,7 +92,13 @@ def _download_one(url: str, dest: Path, progress_cb=None, phase_cb=None) -> None
     resp = _OPENER.open(req, timeout=25)
     if phase_cb:
         phase_cb("downloading")
-    mode = "ab" if partial else "wb"
+    # 服务器忽略 Range（返回 200 全量而非 206）时，追加模式会拼出损坏文件——
+    # 检测到后自动改为全量重写
+    if partial and getattr(resp, "status", 206) == 200:
+        partial = 0
+        mode = "wb"
+    else:
+        mode = "ab" if partial else "wb"
     with resp, dest.open(mode) as f:
         total = resp.headers.get("Content-Length")
         total = int(total) + partial if total else None
@@ -115,7 +122,7 @@ def _download_one(url: str, dest: Path, progress_cb=None, phase_cb=None) -> None
 
 
 def fetch(preset_or_url: str, models_dir: Path, *, name: str | None = None,
-          progress_cb=None, phase_cb=None) -> Path:
+          progress_cb=None, phase_cb=None, note_cb=None) -> Path:
     """下载预置模型或自定义 URL，返回目标文件路径。"""
     models_dir = Path(models_dir).resolve()
     models_dir.mkdir(parents=True, exist_ok=True)
@@ -143,7 +150,7 @@ def fetch(preset_or_url: str, models_dir: Path, *, name: str | None = None,
                 if dest.exists() and dest.stat().st_size > 0:
                     print(f"续传/重新下载：{dest.name}"
                           + (f"（第 {attempt} 次尝试）" if attempt > 1 else ""))
-                _download_one(url, dest, progress_cb, phase_cb)
+                _download_one(url, dest, progress_cb, phase_cb, note_cb)
                 if dest.stat().st_size < 1024 * 1024:
                     dest.unlink(missing_ok=True)
                     raise ValueError("下载结果异常（小于 1MB），可能源不可用")
@@ -160,9 +167,14 @@ def fetch(preset_or_url: str, models_dir: Path, *, name: str | None = None,
                 actual = sha.hexdigest()
                 if actual != expected:
                     dest.unlink(missing_ok=True)
-                    raise ValueError(
-                        f"SHA256 校验失败（实际 {actual[:12]}…，预期 {expected[:12]}…），"
-                        "文件已删除——请重试（会切换下载源）")
+                    msg = (f"数据校验失败（SHA256 不符），已删除并切换下载源重新获取"
+                           if note_cb is None else "")
+                    if note_cb:
+                        try:
+                            note_cb("数据校验未通过，已自动切换下载源重新获取")
+                        except Exception:
+                            pass
+                    raise OSError(msg or "校验失败，切换源")
                 # 校验通过 → 写 .ok 认证标记（含官方摘要）
                 dest.with_suffix(dest.suffix + ".ok").write_text(expected, encoding="utf-8")
                 print(f"完成：{dest}（{_human(dest.stat().st_size)}）")
