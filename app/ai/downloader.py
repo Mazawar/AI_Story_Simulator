@@ -72,21 +72,26 @@ def _safe_filename(raw: str) -> str:
     return name
 
 
-def _download_one(url: str, dest: Path, progress_cb=None) -> None:
+def _download_one(url: str, dest: Path, progress_cb=None, phase_cb=None) -> None:
     validate_endpoint(url)
+    if phase_cb:
+        phase_cb("connecting")
     headers = {"User-Agent": "ai-story-simulator/0.1"}
     partial = dest.stat().st_size if dest.exists() else 0
     if partial:
         headers["Range"] = "bytes=%d-" % partial
     req = urllib.request.Request(url, headers=headers)
-    resp = _OPENER.open(req, timeout=60)
+    # 连接 25 秒快速超时：源不通尽早切下一个源，不让界面干等
+    resp = _OPENER.open(req, timeout=25)
+    if phase_cb:
+        phase_cb("downloading")
     mode = "ab" if partial else "wb"
     with resp, dest.open(mode) as f:
         total = resp.headers.get("Content-Length")
         total = int(total) + partial if total else None
         done = partial
         while True:
-            chunk = resp.read(1024 * 1024)
+            chunk = resp.read(256 * 1024)   # 256KB 粒度：慢速网络下进度也能实时跳动
             if not chunk:
                 break
             f.write(chunk)
@@ -98,7 +103,7 @@ def _download_one(url: str, dest: Path, progress_cb=None) -> None:
 
 
 def fetch(preset_or_url: str, models_dir: Path, *, name: str | None = None,
-          progress_cb=None) -> Path:
+          progress_cb=None, phase_cb=None) -> Path:
     """下载预置模型或自定义 URL，返回目标文件路径。"""
     models_dir = Path(models_dir).resolve()
     models_dir.mkdir(parents=True, exist_ok=True)
@@ -122,7 +127,7 @@ def fetch(preset_or_url: str, models_dir: Path, *, name: str | None = None,
         try:
             if dest.exists() and dest.stat().st_size > 0:
                 print(f"续传/重新下载：{dest.name}")
-            _download_one(url, dest, progress_cb)
+            _download_one(url, dest, progress_cb, phase_cb)
             if dest.stat().st_size < 1024 * 1024:
                 dest.unlink(missing_ok=True)
                 raise ValueError("下载结果异常（小于 1MB），可能源不可用")
