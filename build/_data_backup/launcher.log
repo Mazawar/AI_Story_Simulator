@@ -1,3 +1,4 @@
-2026-08-29 20:07:45,168 INFO 启动 AI Story Simulator v0.3.0-preview.1（frozen=True）
-2026-08-29 20:07:46,469 INFO 本地服务就绪 http://127.0.0.1:8765/?token=uIz80P35XdA5p2QKNZXRh4sjY6n7qpiP
-2026-08-29 20:07:46,563 INFO 窗口图标：D:\WorkSpace\PythonProject\AI_Story_Simulator\dist\AIStorySimulator\_internal\assets\icon.ico
+2026-08-29 20:27:37,396 INFO 启动 AI Story Simulator v0.3.0-preview.1（frozen=True）
+2026-08-29 20:27:38,607 INFO 本地服务就绪 http://127.0.0.1:8765/?token=axeK8SSbxVmnItu7GY4ZcdN58V_j4prs
+2026-08-29 20:27:38,687 INFO 窗口图标：D:\WorkSpace\PythonProject\AI_Story_Simulator\dist\AIStorySimulator\_internal\assets\icon.ico
+2026-08-29 20:30:08,351 INFO 窗口关闭，退出

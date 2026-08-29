@@ -410,7 +410,10 @@ def _preset_exists(key: str) -> dict:
         return {"exists": False, "size": 0}
     f = config.MODELS_DIR / preset["file"]
     size = f.stat().st_size if f.is_file() else 0
-    return {"exists": size > 1024 * 1024, "size": size, "filename": preset["file"]}
+    # 下载进行中的文件不算就绪（半截文件会误导为可用）
+    downloading = _dl_state["running"] and _dl_state["key"] == key
+    return {"exists": size > 1024 * 1024 and not downloading,
+            "size": size, "filename": preset["file"]}
 
 
 class DownloadReq(BaseModel):

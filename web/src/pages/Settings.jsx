@@ -46,6 +46,28 @@ export default function Settings() {
   const modelInfo = (key) => modelStatus?.models?.[key] || null
   const dl = modelStatus?.download || {}
 
+  const ModelStatusLine = ({ keyName, sizeGb }) => {
+    const info = modelStatus?.models?.[keyName] || null
+    if (dl.running && dl.key === keyName) {
+      const pct = dl.total ? Math.floor((dl.done * 100) / dl.total) : 0
+      return (
+        <div className="model-dl-progress">
+          <div className="model-dl-bar"><div style={{ width: `${pct}%` }} /></div>
+          <span>{pct}%</span>
+        </div>
+      )
+    }
+    if (info?.exists) {
+      return <p className="model-ready"><CheckCircleFilled /> 已就绪 · {(info.size / 1073741824).toFixed(1)} GB</p>
+    }
+    return (
+      <button className="model-dl-btn"
+              onClick={(e) => { e.stopPropagation(); downloadModel(keyName) }}>
+        <DownloadOutlined /> 下载模型（{sizeGb}）
+      </button>
+    )
+  }
+
   const save = async () => {
     setSaving(true)
     try {
@@ -111,13 +133,7 @@ export default function Settings() {
             <div>
               <b>主力档 · Qwen3-1.7B</b>
               <p>速度快，推荐日常推演（无此模型文件时自动回落其它已放置模型）</p>
-              {(() => {
-                const info = modelInfo('qwen3-1.7b'); if (!info) return null
-                return info.exists
-                  ? <p className="model-ready"><CheckCircleFilled /> 已就绪 · {(info.size / 1048576 / 1024).toFixed(1)} GB</p>
-                  : <button className="model-dl-btn" onClick={(e) => { e.stopPropagation(); downloadModel('qwen3-1.7b') }}>
-                      <DownloadOutlined /> 下载模型（1.1 GB）</button>
-              })()}
+              <ModelStatusLine keyName="qwen3-1.7b" sizeGb="1.1 GB" />
             </div>
           </label>
           <label className="radio-opt">
@@ -126,19 +142,7 @@ export default function Settings() {
             <div>
               <b>增强档 · Qwen3-4B</b>
               <p>叙事质量更高；CPU 推理较慢</p>
-              {(() => {
-                const info = modelInfo('qwen3-4b'); if (!info) return null
-                return info.exists
-                  ? <p className="model-ready"><CheckCircleFilled /> 已就绪 · {(info.size / 1048576 / 1024).toFixed(1)} GB</p>
-                  : <button className="model-dl-btn" onClick={(e) => { e.stopPropagation(); downloadModel('qwen3-4b') }}>
-                      <DownloadOutlined /> 下载模型（2.5 GB）</button>
-              })()}
-              {dl.running && dl.key === 'qwen3-4b' && (
-                <div className="model-dl-progress">
-                  <div className="model-dl-bar"><div style={{ width: `${dl.percent}%` }} /></div>
-                  <span>{dl.percent}%</span>
-                </div>
-              )}
+              <ModelStatusLine keyName="qwen3-4b" sizeGb="2.5 GB" />
             </div>
           </label>
         </div>
