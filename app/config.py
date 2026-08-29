@@ -41,7 +41,7 @@ if not ICON_PATH.is_file():
     ICON_PATH = ROOT / "_internal" / "assets" / "icon.ico"
 
 APP_NAME = "AI Story Simulator"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.3.0-preview.1"
 
 
 def ensure_runtime_dirs() -> None:
