@@ -10,10 +10,7 @@
 
 from __future__ import annotations
 
-import shutil
 import sys
-import threading
-import time as _time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -81,64 +78,6 @@ def _safe_filename(raw: str) -> str:
     return name
 
 
-def _download_segmented(url: str, dest: Path, total_size: int, *,
-                        workers: int = 8, retries: int = 3,
-                        progress_cb=None, phase_cb=None, note_cb=None) -> None:
-    """progress_cb 参数保留兼容但不再依赖——进度真源是本地文件大小（调用方 stat）。"""
-    """分段并发下载：文件切 N 段，各段独立 Range 并发拉取 + 独立断点重试。
-
-    单连接被网络路径掐断（几百 KB 就断流）时，其它段不受影响；段完成后
-    按序拼接，最后整体 SHA256 校验（由调用方执行）。
-    """
-    import concurrent.futures as _futures
-
-    workers = max(4, min(workers, total_size // (20 * 1024 * 1024) or 1))  # ≥20MB/段
-    seg_size = -(-total_size // workers)
-    ranges = [(i * seg_size, min((i + 1) * seg_size, total_size) - 1)
-              for i in range(workers)]
-    parts = [dest.with_suffix(dest.suffix + f".part{i}") for i in range(workers)]
-
-    def pull(idx: int, start: int, end: int, part: Path) -> None:
-        want = end - start + 1
-        for attempt in range(1, retries + 1):
-            have = part.stat().st_size if part.is_file() else 0
-            if have >= want:
-                return
-            try:
-                req = urllib.request.Request(url, headers={
-                    "User-Agent": "ai-story-simulator/0.1",
-                    "Range": "bytes=%d-%d" % (start + have, end),
-                })
-                resp = _OPENER.open(req, timeout=45)
-                with resp, part.open("ab") as f:
-                    while True:
-                        chunk = resp.read(256 * 1024)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                if part.stat().st_size >= want:
-                    return
-            except Exception as e:
-                if attempt == retries:
-                    raise OSError(f"分段 {idx + 1} 下载失败：{e}") from e
-                _time.sleep(2 * attempt)
-
-    if phase_cb:
-        phase_cb("downloading")
-    with _futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(pull, i, s, e, parts[i])
-                   for i, (s, e) in enumerate(ranges)]
-        for fut in futures:
-            fut.result()
-
-    # 段完成 → 按序拼接；part 文件清理
-    with dest.open("wb") as out:
-        for part in parts:
-            with part.open("rb") as f:
-                shutil.copyfileobj(f, out, 1024 * 1024)
-            part.unlink()
-
-
 def _download_one(url: str, dest: Path, progress_cb=None, phase_cb=None,
                   note_cb=None) -> None:
     validate_endpoint(url)
@@ -149,8 +88,8 @@ def _download_one(url: str, dest: Path, progress_cb=None, phase_cb=None,
     if partial:
         headers["Range"] = "bytes=%d-" % partial
     req = urllib.request.Request(url, headers=headers)
-    # 连接 25 秒快速超时：源不通尽早切下一个源，不让界面干等
-    resp = _OPENER.open(req, timeout=25)
+    # 45 秒超时：慢速流也不断（断点续传兜底）；配合 fetch 层 3 次重试
+    resp = _OPENER.open(req, timeout=45)
     if phase_cb:
         phase_cb("downloading")
     # 服务器忽略 Range（返回 200 全量而非 206）时，追加模式会拼出损坏文件——
