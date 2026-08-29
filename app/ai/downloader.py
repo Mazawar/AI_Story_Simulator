@@ -136,17 +136,21 @@ def fetch(preset_or_url: str, models_dir: Path, *, name: str | None = None,
 
     last_error: Exception | None = None
     for url in urls:
-        try:
-            if dest.exists() and dest.stat().st_size > 0:
-                print(f"续传/重新下载：{dest.name}")
-            _download_one(url, dest, progress_cb, phase_cb)
-            if dest.stat().st_size < 1024 * 1024:
-                dest.unlink(missing_ok=True)
-                raise ValueError("下载结果异常（小于 1MB），可能源不可用")
-            # SHA256 完整性校验（对比官方摘要；能发现截断/损坏/篡改）
-            expected = preset.get("sha256") if preset else None
-            if expected and phase_cb:
-                phase_cb("verifying")
+        # 单源内断线续传重试：弱网下反复断流也能磨完（wget -c 式），
+        # 全部重试耗尽才换下一个源
+        for attempt in range(1, 4):
+            try:
+                if dest.exists() and dest.stat().st_size > 0:
+                    print(f"续传/重新下载：{dest.name}"
+                          + (f"（第 {attempt} 次尝试）" if attempt > 1 else ""))
+                _download_one(url, dest, progress_cb, phase_cb)
+                if dest.stat().st_size < 1024 * 1024:
+                    dest.unlink(missing_ok=True)
+                    raise ValueError("下载结果异常（小于 1MB），可能源不可用")
+                # SHA256 完整性校验（对比官方摘要；能发现截断/损坏/篡改）
+                expected = preset.get("sha256") if preset else None
+                if expected and phase_cb:
+                    phase_cb("verifying")
                 import hashlib
 
                 sha = hashlib.sha256()
@@ -159,15 +163,19 @@ def fetch(preset_or_url: str, models_dir: Path, *, name: str | None = None,
                     raise ValueError(
                         f"SHA256 校验失败（实际 {actual[:12]}…，预期 {expected[:12]}…），"
                         "文件已删除——请重试（会切换下载源）")
-            # 校验通过 → 写 .ok 认证标记（含官方摘要）
-            dest.with_suffix(dest.suffix + ".ok").write_text(expected, encoding="utf-8")
-            print(f"完成：{dest}（{_human(dest.stat().st_size)}）")
-            return dest
-        except (UnsafeAPIEndpointError, ValueError) as e:
-            raise e
-        except (urllib.error.URLError, OSError) as e:
-            last_error = e
-            print(f"  源失败（{e}），尝试下一个源…")
+                # 校验通过 → 写 .ok 认证标记（含官方摘要）
+                dest.with_suffix(dest.suffix + ".ok").write_text(expected, encoding="utf-8")
+                print(f"完成：{dest}（{_human(dest.stat().st_size)}）")
+                return dest
+            except (UnsafeAPIEndpointError, ValueError) as e:
+                raise e
+            except (urllib.error.URLError, OSError) as e:
+                last_error = e
+                wait = 2 * attempt
+                print(f"  源连接中断（{e}），{wait}s 后断点续传重试（{attempt}/3）…")
+                import time as _time
+
+                _time.sleep(wait)
     raise RuntimeError(f"全部源下载失败：{last_error}")
 
 
